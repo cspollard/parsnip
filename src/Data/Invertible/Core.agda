@@ -51,6 +51,29 @@ roundTripExact p x with parse p (print p x)
   | trans (cong (parse p) (sym (++-identityʳ (print p x)))) (correct p x [])
 ... | .(just (x , [])) | refl = refl
 
+------------------------------------------------------------------------
+-- Standard Library LeftInverse Derivation
+------------------------------------------------------------------------
+
+open import Function.Bundles using (LeftInverse; _↩_; mk↩)
+
+-- Total parser with default fallback value
+parseExactTotal : ∀ {A} → InvertibleParser A → A → List Char → A
+parseExactTotal p default cs with parseExact p cs
+... | just x  = x
+... | nothing = default
+
+-- Retraction lemma: parseExactTotal p default (print p x) ≡ x
+parserRetraction : ∀ {A} (p : InvertibleParser A) (default : A) (x : A) →
+                   parseExactTotal p default (print p x) ≡ x
+parserRetraction p default x with parseExact p (print p x) | roundTripExact p x
+... | .(just x) | refl = refl
+
+-- Closed LeftInverse bundle from any InvertibleParser with a default witness
+toLeftInverse : ∀ {A} → InvertibleParser A → A → (List Char ↩ A)
+toLeftInverse p default = mk↩ {to = parseExactTotal p default} {from = print p}
+  (λ { refl → parserRetraction p default _ })
+
 
 ------------------------------------------------------------------------
 -- Combinators
