@@ -5,14 +5,14 @@
 module GeoAgda.Parsing.Invertible.Core where
 
 open import Level using (0ℓ)
-open import Data.Char.Base using (Char)
-open import Data.Bool.Base using (Bool; true; false; if_then_else_)
-open import Data.List.Base as List using (List; []; _∷_; _++_)
+open import Data.Char using (Char)
+open import Data.Bool using (Bool; true; false; if_then_else_)
+open import Data.List as List using (List; []; _∷_; _++_)
 open import Data.List.Properties using (++-assoc; ++-identityʳ)
-open import Data.Product.Base using (_×_; _,_; proj₁; proj₂)
-open import Data.Maybe.Base using (Maybe; just; nothing)
-open import Data.Unit.Base using (⊤; tt)
-open import Function.Base using (_∘_; _$_)
+open import Data.Product using (_×_; _,_; proj₁; proj₂)
+open import Data.Maybe using (Maybe; just; nothing)
+open import Data.Unit using (⊤; tt)
+open import Function using (_∘_; _$_)
 open import Function.Bundles using (Inverse; _↔_)
 open import Relation.Binary.PropositionalEquality as ≡
   using (_≡_; refl; sym; trans; cong; cong₂; module ≡-Reasoning)

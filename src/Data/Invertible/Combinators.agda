@@ -3,12 +3,12 @@
 module GeoAgda.Parsing.Invertible.Combinators where
 
 open import Level using (0ℓ)
-open import Data.Char.Base using (Char)
-open import Data.List.Base using (List; []; _∷_; _++_)
-open import Data.Product.Base using (_×_; _,_; proj₁; proj₂)
-open import Data.Unit.Base using (⊤; tt)
-open import Data.Maybe.Base using (Maybe; just; nothing)
-open import Function.Base using (_∘_; _$_)
+open import Data.Char using (Char)
+open import Data.List using (List; []; _∷_; _++_)
+open import Data.Product using (_×_; _,_; proj₁; proj₂)
+open import Data.Unit using (⊤; tt)
+open import Data.Maybe using (Maybe; just; nothing)
+open import Function using (_∘_; _$_)
 open import Function.Bundles using (_↔_; mk↔ₛ′)
 open import Relation.Binary.PropositionalEquality as ≡ using (_≡_; refl)
 
