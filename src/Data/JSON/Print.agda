@@ -26,7 +26,7 @@ open import Data.Empty
 open import Data.JSON.AST
 open import Data.JSON.ObjectC stringDecSetoid
 open JSONCont
-open import GeoAgda.Parsing.Invertible.Number
+open import GeoAgda.Parsing.Invertible.Number public
   using (printSign; printNat; printFraction; printExponent; printNumber)
 
 ------------------------------------------------------------------------
