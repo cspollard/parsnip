@@ -5,11 +5,11 @@ module Data.JSON.Schema where
 open import Level using (0ℓ)
 open import Data.Bool using (Bool; true; false)
 open import Data.Char using (Char)
-open import Data.String as String using (String)
+open import Data.String as String using (String; fromList)
 open import Data.String.Properties using (_≟_) renaming (≡-decSetoid to stringDecSetoid)
 open import Data.Nat using (ℕ; zero; suc)
 open import Data.List as List using (List; []; _∷_; map)
-open import Data.Product using (_×_; _,_; proj₁; proj₂)
+open import Data.Product using (_×_; _,_; proj₁; proj₂; map₁)
 open import Data.Maybe as Maybe using (Maybe; just; nothing)
 open import Data.Unit using (⊤; tt)
 open import Data.Empty using (⊥; ⊥-elim)
@@ -19,8 +19,7 @@ open import Relation.Binary.PropositionalEquality using (_≡_; refl)
 
 open import Data.JSON.AST
 open JSONCont
-  using (listCToList; pstring; pnumber; pbool; pnull; object; array; primnull; primbool; primnumber; primstring; prim)
-open import Data.JSON.ObjectC stringDecSetoid using (objectToList)
+  using (listCToList; objectCToEntries; pstring; pnumber; pbool; pnull; object; array; primnull; primbool; primnumber; primstring; prim)
 
 ------------------------------------------------------------------------
 -- JSON Unpacking / Projections
@@ -39,7 +38,7 @@ asNumber (impure ((pnumber , n) , _)) = just n
 asNumber _                            = nothing
 
 asString : JSON → Maybe String
-asString (impure ((pstring , s) , _)) = just s
+asString (impure ((pstring , s) , _)) = just (fromList s)
 asString _                            = nothing
 
 asArray : JSON → Maybe (List JSON)
@@ -47,7 +46,7 @@ asArray (impure ((array , shp) , pos)) = just (listCToList (shp , pos))
 asArray _                              = nothing
 
 asObject : JSON → Maybe (List (String × JSON))
-asObject (impure ((object , shp) , pos)) = just (objectToList (shp , pos))
+asObject (impure ((object , shp) , pos)) = just (List.map (map₁ fromList) (objectCToEntries (shp , pos)))
 asObject _                               = nothing
 
 ------------------------------------------------------------------------

@@ -1,43 +1,52 @@
 {-# OPTIONS --safe --cubical-compatible -WnoUnsupportedIndexedMatch #-}
 
+------------------------------------------------------------------------
+-- The JSON AST as a free monad over a container
+--
+-- A JSON value is `JSONC ⋆ ⊥` (`Data.Container.FreeMonad`): a node has a
+-- shape (its type, plus the payload of a leaf or the length of an array,
+-- or the keys of an object) and one child per position.
+--
+-- * Arrays are `ListC = ℕ ▷ Fin`.
+-- * Objects are `ObjectC = List (List Char) ▷ (Fin ∘ length)`: keys in order,
+--   one child per key.  RFC 8259 §4 only says that names SHOULD be
+--   unique, so duplicate keys are representable (and round-trip).
+-- * String payloads are `List Char`: the `String ↔ List Char` round trip
+--   is not provable under `--safe` (see JSONPlan.md).  `stringⱼ` accepts
+--   a `String` for convenience.
+------------------------------------------------------------------------
+
 module Data.JSON.AST where
 
-open import Level using (0ℓ; Level) renaming (suc to lsuc)
+open import Level using (0ℓ; Level)
 open import Data.Bool using (Bool; true; false)
+open import Data.Char using (Char)
 open import Data.Nat using (ℕ; zero; suc)
-open import Data.Integer using (ℤ)
-open import Data.Sign using (Sign; +; -)
-open import Data.String using (String)
-open import Data.List using (List; []; _∷_; length; lookup)
-open import Data.Product using (_×_; _,_; proj₁; proj₂)
+open import Data.String using (String; toList)
+open import Data.List using (List; []; _∷_; length)
+import Data.List as L
+open import Data.Product using (_×_; _,_; proj₁; proj₂; map₁)
 open import Data.Unit using (⊤; tt)
+open import Data.Empty using (⊥)
 open import Data.Fin using (Fin; zero; suc)
 open import Function using (_∘_)
 open import Data.Container hiding (refl)
 import Data.Container.Combinator as CC
 open import Data.Container.FreeMonad as FM
-open import Relation.Binary.PropositionalEquality
-open import Data.Float
-open import Relation.Binary
-open import Relation.Nullary
-open import Data.JSON.ObjectC
+open import Relation.Binary.PropositionalEquality using (_≡_; refl)
 open import Data.JSON.Number using (JSONNumber; jsonNumber) public
-open import Data.String.Properties using () renaming (≡-decSetoid to stringDecSetoid)
-open import Data.Sum
-open import Data.Empty
-open import Function using (flip)
 
 private variable
   a b : Level
   A : Set a
   B : Set b
 
-------------------------------------------------------------------------
--- The Inductive JSON AST Type
-------------------------------------------------------------------------
-
 -- put in module to avoid clashes
 module JSONCont where
+
+  ----------------------------------------------------------------------
+  -- Arrays and objects as containers
+  ----------------------------------------------------------------------
 
   ListC : Container 0ℓ 0ℓ
   ListC = ℕ ▷ Fin
@@ -49,19 +58,39 @@ module JSONCont where
     go zero _ = b
     go (suc k) pos = f (pos zero) (go k (pos ∘ suc))
 
-  module SO = Data.JSON.ObjectC stringDecSetoid
-  StringObjectC : Container 0ℓ 0ℓ
-  StringObjectC = SO.ObjectC
-
   listCToList : ⟦ ListC ⟧ A → List A
   listCToList = foldListC _∷_ []
 
   listToListC : List A → ⟦ ListC ⟧ A
   listToListC = L.foldr add (zero , λ ())
     where
-      import Data.List as L
-      add : A → ⟦ ListC ⟧ A → ⟦ ListC ⟧ A
-      add x (fst , snd) = suc fst , λ { zero → x; (suc i) → snd i }
+    add : _ → ⟦ ListC ⟧ _ → ⟦ ListC ⟧ _
+    add x p = suc (proj₁ p) , λ { zero → x; (suc i) → proj₂ p i }
+
+  -- Keys are `List Char`, like string payloads.
+  Key : Set
+  Key = List Char
+
+  ObjectC : Container 0ℓ 0ℓ
+  ObjectC = List Key ▷ (Fin ∘ length)
+
+  -- The keyed children, in key order.
+  objectCToEntries : ⟦ ObjectC ⟧ A → List (Key × A)
+  objectCToEntries (ks , f) = go ks f
+    where
+    go : ∀ ks → (Fin (length ks) → _) → List (Key × _)
+    go []       _ = []
+    go (k ∷ ks) f = (k , f zero) ∷ go ks (f ∘ suc)
+
+  entriesToObjectC : List (Key × A) → ⟦ ObjectC ⟧ A
+  entriesToObjectC = L.foldr add ([] , λ ())
+    where
+    add : _ → ⟦ ObjectC ⟧ _ → ⟦ ObjectC ⟧ _
+    add (k , x) p = k ∷ proj₁ p , λ { zero → x; (suc i) → proj₂ p i }
+
+  ----------------------------------------------------------------------
+  -- The signature of JSON values
+  ----------------------------------------------------------------------
 
   data PrimJSONType : Set where
     primstring primnumber primbool primnull : PrimJSONType
@@ -70,53 +99,19 @@ module JSONCont where
     object array : JSONType
     prim : PrimJSONType → JSONType
 
-  prim-injective : ∀ {t t'} → prim t ≡ prim t' → t ≡ t'
-  prim-injective refl = refl
-
   pattern pstring = prim primstring
   pattern pnumber = prim primnumber
   pattern pbool = prim primbool
   pattern pnull = prim primnull
 
   RetType : (t : PrimJSONType) → Set
-  RetType primstring = String
+  RetType primstring = List Char
   RetType primnumber = JSONNumber
   RetType primbool = Bool
   RetType primnull = ⊤
 
-  PrimJSONType≟ : DecidableEquality PrimJSONType
-  PrimJSONType≟ primstring primstring = yes refl
-  PrimJSONType≟ primnumber primnumber = yes refl
-  PrimJSONType≟ primbool primbool = yes refl
-  PrimJSONType≟ primnull primnull = yes refl
-  PrimJSONType≟ primstring primnumber = no λ ()
-  PrimJSONType≟ primstring primbool = no λ ()
-  PrimJSONType≟ primstring primnull = no λ ()
-  PrimJSONType≟ primnumber primstring = no λ ()
-  PrimJSONType≟ primnumber primbool = no λ ()
-  PrimJSONType≟ primnumber primnull = no λ ()
-  PrimJSONType≟ primbool primstring = no λ ()
-  PrimJSONType≟ primbool primnumber = no λ ()
-  PrimJSONType≟ primbool primnull = no λ ()
-  PrimJSONType≟ primnull primstring = no λ ()
-  PrimJSONType≟ primnull primnumber = no λ ()
-  PrimJSONType≟ primnull primbool = no λ ()
-
-  JSONType≟ : DecidableEquality JSONType
-  JSONType≟ object object = yes refl
-  JSONType≟ array array = yes refl
-  JSONType≟ object array = no λ ()
-  JSONType≟ array object = no λ ()
-  JSONType≟ object (prim _) = no λ ()
-  JSONType≟ array (prim _) = no λ ()
-  JSONType≟ (prim _) object = no λ ()
-  JSONType≟ (prim _) array = no λ ()
-  JSONType≟ (prim t) (prim t') with PrimJSONType≟ t t'
-  ... | yes p = yes (cong prim p)
-  ... | no ¬p = no λ p → ¬p (prim-injective p)
-
   JSON→ : JSONType → Container 0ℓ 0ℓ
-  JSON→ object = StringObjectC
+  JSON→ object = ObjectC
   JSON→ array = ListC
   JSON→ (prim t) = CC.const (RetType t)
 
@@ -162,8 +157,12 @@ module JSONCont where
   trueⱼ = boolⱼ true
   falseⱼ = boolⱼ false
 
+  -- A string given as its characters.
+  stringⱼ′ : List Char → JSON
+  stringⱼ′ = jsoninj primstring
+
   stringⱼ : String → JSON
-  stringⱼ = jsoninj primstring
+  stringⱼ = stringⱼ′ ∘ toList
 
   numberⱼ : JSONNumber → JSON
   numberⱼ = jsoninj primnumber
@@ -171,13 +170,17 @@ module JSONCont where
   arrayⱼ : List (JSONM A) → JSONM A
   arrayⱼ = lift array ∘ listToListC
 
-  objectⱼ : ⟦ StringObjectC ⟧ (JSONM A) → JSONM A
+  objectⱼ : ⟦ ObjectC ⟧ (JSONM A) → JSONM A
   objectⱼ = lift object
 
+  -- An object given as its keyed children, with keys as characters.
+  objectFromList′ : List (List Char × JSONM A) → JSONM A
+  objectFromList′ = objectⱼ ∘ entriesToObjectC
+
   objectFromList : List (String × JSONM A) → JSONM A
-  objectFromList = objectⱼ ∘ SO.toObjectC
+  objectFromList = objectFromList′ ∘ L.map (map₁ toList)
 
 open JSONCont public using
-  ( JSONM; JSON; nullⱼ; boolⱼ; trueⱼ; falseⱼ; stringⱼ; numberⱼ; arrayⱼ; objectⱼ
-  ; objectFromList
+  ( JSONM; JSON; nullⱼ; boolⱼ; trueⱼ; falseⱼ; stringⱼ; stringⱼ′; numberⱼ; arrayⱼ; objectⱼ
+  ; objectFromList; objectFromList′
   )

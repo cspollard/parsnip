@@ -37,13 +37,8 @@ open import Data.JSON.Stage using (Chars; Subtype)
 -- Setoids (stubs; real definitions arrive with the phase noted)
 ------------------------------------------------------------------------
 
--- Phase 5: bisimilarity on the free monad, built on stdlib `Pointwise`
--- (`Data.Container.Relation.Binary.Pointwise`), and its setoid.
-_≈ⱼ_ : Rel JSON 0ℓ
-_≈ⱼ_ = ?
-
-JSONSetoid : Setoid 0ℓ 0ℓ
-JSONSetoid = ?
+-- Done (Phase 5): bisimilarity of JSON values and its setoid.
+open import Data.JSON.Equality using (_≈ⱼ_; JSONSetoid)
 
 -- Phase 4/6: lexical tokens.
 data JSONToken : Set where

@@ -8,9 +8,10 @@ open import Data.Bool using (Bool; true; false; if_then_else_)
 open import Data.Nat using (ℕ; zero; suc)
 open import Data.Integer as ℤ using (ℤ; +_)
 open import Data.Sign using (+; -)
-open import Data.String using (String; _==_)
+open import Data.String using (String; _==_; fromList)
 open import Data.List using (List; []; _∷_; map; foldr; concatMap)
-open import Data.Product using (_×_; _,_; proj₁; proj₂)
+import Data.List as List
+open import Data.Product using (_×_; _,_; proj₁; proj₂; map₁)
 open import Data.Unit using (⊤; tt)
 open import Data.Empty using (⊥)
 open import Data.Maybe using (Maybe; just; nothing)
@@ -25,10 +26,9 @@ open import Data.Container.FreeMonad as FM
 open import Data.JSON.AST
 open JSONCont
   using
-  ( JSONType; object; array; prim; PrimJSONType; primstring; primnumber
+  ( JSONType; object; array; prim; objectCToEntries; PrimJSONType; primstring; primnumber
   ; primbool; primnull
   )
-open import Data.JSON.ObjectC using (ObjectC)
 
 ------------------------------------------------------------------------
 -- Target Cartographic Structures
@@ -102,10 +102,10 @@ data JSONView : Set where
 -- Top-level pattern eliminator (unpacks Container Free Monad node directly)
 matchJSON : JSON → JSONView
 matchJSON (impure ((object , shp) , pos)) =
-  VObject (toListC (shp , pos))
+  VObject (List.map (map₁ fromList) (objectCToEntries (shp , pos)))
 matchJSON (impure ((array , n) , pos)) =
   VArray n pos
-matchJSON (impure ((prim primstring , str) , _)) = VString str
+matchJSON (impure ((prim primstring , str) , _)) = VString (fromList str)
 matchJSON (impure ((prim primnumber , num) , _)) = VNumber num
 matchJSON (impure ((prim primbool , b) , _))     = VBool b
 matchJSON (impure ((prim primnull , _) , _))     = VNull

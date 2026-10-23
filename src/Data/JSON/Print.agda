@@ -1,85 +1,56 @@
 {-# OPTIONS --safe --cubical-compatible -WnoUnsupportedIndexedMatch #-}
 
+------------------------------------------------------------------------
+-- Compact JSON printing
+--
+-- `printJSON` is the free-monad catamorphism (`foldJSONM`) printing each
+-- node from its printed children.  It is the `to` of `jsonStage` (see
+-- `Data.JSON.Goals`): the parser is proved to be its right inverse.
+-- Literals, numbers and string literals come from `Data.JSON.Keyword`,
+-- `Data.JSON.Number` and `Data.JSON.String`, so there is a single
+-- definition of each spelling.
+------------------------------------------------------------------------
+
 module Data.JSON.Print where
 
-open import Level using (0ℓ)
-open import Data.Bool using (Bool; true; false)
+open import Data.Bool using (true; false)
 open import Data.Char using (Char)
-open import Data.Char.Properties using (_≟_)
-open import Data.String as String using (String; toList; fromList)
-open import Data.String.Properties using () renaming (≡-decSetoid to stringDecSetoid)
-open import Data.Nat using (ℕ; zero; suc)
-open import Data.Integer using (ℤ; +_; -[1+_])
-open import Data.Sign using (Sign; +; -)
-open import Data.Fin using (Fin; zero; suc)
 open import Data.List as List
-  using (List; []; _∷_; _++_; concat; map; length; intercalate)
-open import Data.List.Membership.DecPropositional (_≟_)
-open import Data.List.Relation.Unary.Any using (any?)
+  using (List; []; _∷_; _++_; intercalate)
 open import Data.Product using (_×_; _,_)
-open import Data.Unit using (⊤; tt)
-open import Function using (_∘_; _$_)
-open import Relation.Nullary.Decidable using (yes; no; does)
-open import Data.Container as C
-open import Data.Empty
+open import Data.String using (String; fromList)
+open import Function using (_∘_)
+open import Data.Container using (⟦_⟧)
 
 open import Data.JSON.AST
-open import Data.JSON.ObjectC stringDecSetoid
 open JSONCont
-open import GeoAgda.Parsing.Invertible.Number public
-  using (printSign; printNat; printFraction; printExponent; printNumber)
+open import Data.JSON.Number using (printNumber) public
+open import Data.JSON.String using (printStringLiteral) public
+open import Data.JSON.Keyword using (keywordText; nullK; trueK; falseK)
 
-------------------------------------------------------------------------
--- String Escaping & Formatting
-------------------------------------------------------------------------
+printPrim : (t : PrimJSONType) → RetType t → List Char
+printPrim primstring = printStringLiteral
+printPrim primnumber = printNumber
+printPrim primbool true  = keywordText trueK
+printPrim primbool false = keywordText falseK
+printPrim primnull _     = keywordText nullK
 
-escapeList : List Char
-escapeList = '"' ∷ '\\' ∷ '\n' ∷ '\r' ∷ '\t' ∷ []
+printArrayBody : List (List Char) → List Char
+printArrayBody = intercalate (',' ∷ [])
 
--- Escape special JSON string characters using decidable equality
-escapeString : List Char → List Char
-escapeString = List.concat ∘ List.map go
+printObjectBody : List (Key × List Char) → List Char
+printObjectBody = intercalate (',' ∷ []) ∘ List.map entry
   where
-    go : Char → List Char
-    go c with does (c ∈? escapeList)
-    ... | true = '\\' ∷ c ∷ []
-    ... | false = c ∷ []
-
-printStringLiteral : String → List Char
-printStringLiteral s = '"' ∷ escapeString (toList s) ++ ('"' ∷ [])
-
-------------------------------------------------------------------------
--- JSON Pretty-Printing
-------------------------------------------------------------------------
-
--- Pretty print a closed JSON value to a List Char
-print⊤ : ⊤ → List Char
-print⊤ _ = String.toList "null"
-
-printPrim : (t : PrimJSONType) → (RetType t) → List Char
-printPrim PrimJSONType.primstring = toList
-printPrim PrimJSONType.primnumber = printNumber
-printPrim PrimJSONType.primbool = toList ∘ show
-  where open import Data.Bool.Show
-printPrim PrimJSONType.primnull = print⊤
+  entry : Key × List Char → List Char
+  entry (k , x) = printStringLiteral k ++ ':' ∷ x
 
 printJSON : JSON → List Char
-printArrayBody : ⟦ ListC ⟧ (List Char) → List Char
-printObjectBody : ⟦ StringObjectC ⟧ (List Char) → List Char
-
-printArrayBody = intercalate (',' ∷  ' ' ∷ []) ∘ listCToList
-
-printObjectBody = intercalate (',' ∷ ' ' ∷ []) ∘ List.map go ∘ objectToList
-  where
-    go : (String × List Char) → List Char
-    go (k , x) = toList k ++ ':' ∷ ' ' ∷ x
-
 printJSON = foldJSONM (λ ()) go
   where
-    go : (t : JSONType) (x : ⟦ JSON→ t ⟧ (List Char)) → List Char
-    go object x = '{' ∷ printObjectBody x ++ '}' ∷ []
-    go array x  = '[' ∷ printArrayBody x ++ ']' ∷ []
-    go (prim t) (x , _) = printPrim t x
+  go : (t : JSONType) (x : ⟦ JSON→ t ⟧ (List Char)) → List Char
+  go object x = '{' ∷ printObjectBody (objectCToEntries x) ++ '}' ∷ []
+  go array x  = '[' ∷ printArrayBody (listCToList x) ++ ']' ∷ []
+  go (prim t) (x , _) = printPrim t x
 
 -- Render to standard Agda String
 renderJSON : JSON → String
