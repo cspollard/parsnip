@@ -31,6 +31,7 @@ open import Relation.Binary using (Rel; Setoid)
 open import Relation.Binary.PropositionalEquality using (setoid)
 
 open import Data.JSON.AST using (JSON; JSONNumber)
+open import Data.JSON.Stage using (Chars; Subtype)
 
 ------------------------------------------------------------------------
 -- Setoids (stubs; real definitions arrive with the phase noted)
@@ -50,59 +51,37 @@ data JSONToken : Set where
 -- Phase 4: `null`, `true`, `false`.
 data Keyword : Set where
 
--- Phase 3: what may not follow a number (digit, `.`, `e`, `E`).
-NoLeadingNumCont : List Char → Set
-NoLeadingNumCont = ?
-
--- Phase 4: what may follow a token.
-TokenFollow : JSONToken → List Char → Set
-TokenFollow = ?
-
 -- Phase 6: no two adjacent number tokens.
 ValidTokenSeq : List JSONToken → Set
 ValidTokenSeq = ?
 
--- Phase 6: token streams satisfying `ValidTokenSeq`, as a setoid
--- (a subtype of `setoid (List JSONToken)`).
+-- Token streams satisfying `ValidTokenSeq`.
 ValidTokens : Setoid 0ℓ 0ℓ
-ValidTokens = ?
-
-Chars : Setoid 0ℓ 0ℓ
-Chars = setoid (List Char)
-
--- Phase 2: a value together with a continuation allowed to follow it,
--- i.e. `Σ[ (y , rest) ∈ Y × List I ] Follow y rest`, compared pointwise.
-PrefixSetoid : ∀ {I : Set} (S : Setoid 0ℓ 0ℓ) →
-               (Setoid.Carrier S → List I → Set) → Setoid 0ℓ 0ℓ
-PrefixSetoid = ?
+ValidTokens = Subtype (setoid (List JSONToken)) ValidTokenSeq
 
 ------------------------------------------------------------------------
--- Stage types
+-- Lexeme stages (one lexeme ↔ its characters)
+--
+-- Instances of the prefix round-trip lemmas (internal to Phase 3/4/6,
+-- stated about the partial lexers with an arbitrary follow-condition)
+-- at an empty continuation.  Built with `mkStage`.
 ------------------------------------------------------------------------
 
--- A prefix stage over symbols `I`: `to (y , rest) = print y ++ rest` and
--- `from` is the prefix parser returning `(value , remaining input)`.
--- `inverseʳ` is the round-trip law (analogue of a partial isomorphism in
--- Rendel & Ostermann, with an explicit follow-condition).
-Prefix : ∀ {I : Set} (S : Setoid 0ℓ 0ℓ) →
-         (Setoid.Carrier S → List I → Set) → Set
-Prefix {I} S Follow = RightInverse (PrefixSetoid S Follow) (setoid (List I))
-
-------------------------------------------------------------------------
--- Lexical stages (Chars → tokens)
-------------------------------------------------------------------------
-
-numberStage : Prefix {Char} (setoid JSONNumber) (λ _ rest → NoLeadingNumCont rest)
+numberStage : RightInverse (setoid JSONNumber) Chars
 numberStage = ?
 
-stringStage : Prefix {Char} (setoid (List Char)) (λ _ _ → ⊤)
+stringStage : RightInverse (setoid (List Char)) Chars
 stringStage = ?
 
-keywordStage : Prefix {Char} (setoid Keyword) (λ _ _ → ⊤)
+keywordStage : RightInverse (setoid Keyword) Chars
 keywordStage = ?
 
-tokenStage : Prefix {Char} (setoid JSONToken) TokenFollow
+tokenStage : RightInverse (setoid JSONToken) Chars
 tokenStage = ?
+
+------------------------------------------------------------------------
+-- Token stream (Chars → tokens)
+------------------------------------------------------------------------
 
 -- Whole input: `to` concatenates the printed tokens; `from` is the tokenizer.
 lexer : RightInverse ValidTokens Chars
@@ -122,10 +101,8 @@ parser = ?
 -- The whole pipeline
 ------------------------------------------------------------------------
 
-open import Function.Construct.Composition using ()
-  renaming (rightInverse to _∘-rightInverse_)
+import Function.Construct.Composition as Composition
 
 -- Headline theorem: `parseJSON (printJSON v) ≈ⱼ v`, lexing included.
 jsonStage : RightInverse JSONSetoid Chars
-jsonStage = ?
--- target: jsonStage = parser ∘-rightInverse lexer   (stdlib composition)
+jsonStage = Composition.rightInverse parser lexer
