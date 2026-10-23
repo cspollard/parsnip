@@ -67,8 +67,8 @@ ValidTokens = Subtype (setoid (List JSONToken)) ValidTokenSeq
 -- at an empty continuation.  Built with `mkStage`.
 ------------------------------------------------------------------------
 
-numberStage : RightInverse (setoid JSONNumber) Chars
-numberStage = ?
+-- Done (Phase 3): `Data.JSON.Number.numberStage`.
+open import Data.JSON.Number using (numberStage)
 
 stringStage : RightInverse (setoid (List Char)) Chars
 stringStage = ?

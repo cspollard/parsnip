@@ -21,6 +21,7 @@ open import Data.Float
 open import Relation.Binary
 open import Relation.Nullary
 open import Data.JSON.ObjectC
+open import Data.JSON.Number using (JSONNumber; jsonNumber) public
 open import Data.String.Properties using () renaming (≡-decSetoid to stringDecSetoid)
 open import Data.Sum
 open import Data.Empty
@@ -30,20 +31,6 @@ private variable
   a b : Level
   A : Set a
   B : Set b
-
-------------------------------------------------------------------------
--- JSON Numbers
-------------------------------------------------------------------------
-
--- Exact representation of JSON numbers according to RFC 8259:
---   sign * (integral + fraction * 10^(- length fraction)) * 10^exponent
-record JSONNumber : Set where
-  constructor jsonNumber
-  field
-    sign     : Sign
-    integral : ℕ
-    fraction : List (Fin 10)
-    exponent : ℤ
 
 ------------------------------------------------------------------------
 -- The Inductive JSON AST Type
