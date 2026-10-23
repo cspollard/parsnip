@@ -48,9 +48,6 @@ JSONSetoid = ?
 -- Phase 4/6: lexical tokens.
 data JSONToken : Set where
 
--- Phase 4: `null`, `true`, `false`.
-data Keyword : Set where
-
 -- Phase 6: no two adjacent number tokens.
 ValidTokenSeq : List JSONToken → Set
 ValidTokenSeq = ?
@@ -70,11 +67,9 @@ ValidTokens = Subtype (setoid (List JSONToken)) ValidTokenSeq
 -- Done (Phase 3): `Data.JSON.Number.numberStage`.
 open import Data.JSON.Number using (numberStage)
 
-stringStage : RightInverse (setoid (List Char)) Chars
-stringStage = ?
-
-keywordStage : RightInverse (setoid Keyword) Chars
-keywordStage = ?
+-- Done (Phase 4): `Data.JSON.String.stringStage`, `Data.JSON.Keyword.keywordStage`.
+open import Data.JSON.String using (stringStage)
+open import Data.JSON.Keyword using (Keyword; keywordStage)
 
 tokenStage : RightInverse (setoid JSONToken) Chars
 tokenStage = ?
