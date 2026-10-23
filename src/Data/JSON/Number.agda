@@ -342,6 +342,12 @@ parseNumber (c ∷ cs) with c ≟ '-'
 ... | yes _ = Maybe.map proj₁ (lexNumber - cs)
 ... | no  _ = Maybe.map proj₁ (lexNumber + (c ∷ cs))
 
+-- A printed natural number, followed by anything, starts with a digit.
+printNat-head : ∀ n rest → ∃ λ d → ∃ λ cs → printNat n ++ rest ≡ printDigit d ∷ cs
+printNat-head n rest with natToDigits n | natToDigits-nonEmpty n
+... | []     | ()
+... | d ∷ ds | _ = d , printDigits ds ++ rest , refl
+
 private
   NonMinusHead : List Char → Set
   NonMinusHead []      = ⊤

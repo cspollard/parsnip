@@ -34,48 +34,21 @@ open import Data.JSON.AST using (JSON; JSONNumber)
 open import Data.JSON.Stage using (Chars; Subtype)
 
 ------------------------------------------------------------------------
--- Setoids (stubs; real definitions arrive with the phase noted)
-------------------------------------------------------------------------
-
--- Done (Phase 5): bisimilarity of JSON values and its setoid.
-open import Data.JSON.Equality using (_≈ⱼ_; JSONSetoid)
-
--- Phase 4/6: lexical tokens.
-data JSONToken : Set where
-
--- Phase 6: no two adjacent number tokens.
-ValidTokenSeq : List JSONToken → Set
-ValidTokenSeq = ?
-
--- Token streams satisfying `ValidTokenSeq`.
-ValidTokens : Setoid 0ℓ 0ℓ
-ValidTokens = Subtype (setoid (List JSONToken)) ValidTokenSeq
-
-------------------------------------------------------------------------
--- Lexeme stages (one lexeme ↔ its characters)
+-- Done
 --
--- Instances of the prefix round-trip lemmas (internal to Phase 3/4/6,
--- stated about the partial lexers with an arbitrary follow-condition)
--- at an empty continuation.  Built with `mkStage`.
+-- Phase 3: `Data.JSON.Number.numberStage`
+-- Phase 4: `Data.JSON.String.stringStage`, `Data.JSON.Keyword.keywordStage`
+-- Phase 5: `Data.JSON.Equality.{_≈ⱼ_, JSONSetoid}`
+-- Phase 6 (lexing): `Data.JSON.Token.tokenStage`,
+--          `Data.JSON.Lexer.{ValidTokenSeq, ValidTokens, lexer}`
 ------------------------------------------------------------------------
 
--- Done (Phase 3): `Data.JSON.Number.numberStage`.
+open import Data.JSON.Equality using (_≈ⱼ_; JSONSetoid)
 open import Data.JSON.Number using (numberStage)
-
--- Done (Phase 4): `Data.JSON.String.stringStage`, `Data.JSON.Keyword.keywordStage`.
 open import Data.JSON.String using (stringStage)
 open import Data.JSON.Keyword using (Keyword; keywordStage)
-
-tokenStage : RightInverse (setoid JSONToken) Chars
-tokenStage = ?
-
-------------------------------------------------------------------------
--- Token stream (Chars → tokens)
-------------------------------------------------------------------------
-
--- Whole input: `to` concatenates the printed tokens; `from` is the tokenizer.
-lexer : RightInverse ValidTokens Chars
-lexer = ?
+open import Data.JSON.Token using (JSONToken; tokenStage)
+open import Data.JSON.Lexer using (ValidTokenSeq; ValidTokens; lexer)
 
 ------------------------------------------------------------------------
 -- Syntactic stage (tokens → JSON)
