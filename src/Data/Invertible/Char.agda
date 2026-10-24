@@ -7,6 +7,7 @@ open import Data.Char using (Char)
 open import Data.Char.Properties using (_≟_)
 open import Data.List using (List; []; _∷_; _++_)
 open import Data.Fin using (Fin; zero; suc)
+open import Data.Fin.Patterns using (0F; 1F; 2F; 3F; 4F; 5F; 6F; 7F; 8F; 9F)
 open import Data.Maybe using (Maybe; just; nothing)
 open import Data.Product using (∃; _×_; _,_; proj₁; proj₂)
 open import Data.Unit using (⊤; tt)
@@ -24,43 +25,43 @@ open import GeoAgda.Parsing.Invertible.Core
 
 -- Print a base-10 digit (Fin 10) to its corresponding ASCII character
 printDigit : Fin 10 → Char
-printDigit (zero)                                         = '0'
-printDigit (suc zero)                                     = '1'
-printDigit (suc (suc zero))                               = '2'
-printDigit (suc (suc (suc zero)))                         = '3'
-printDigit (suc (suc (suc (suc zero))))                   = '4'
-printDigit (suc (suc (suc (suc (suc zero)))))             = '5'
-printDigit (suc (suc (suc (suc (suc (suc zero))))))       = '6'
-printDigit (suc (suc (suc (suc (suc (suc (suc zero))))))) = '7'
-printDigit (suc (suc (suc (suc (suc (suc (suc (suc zero)))))))) = '8'
-printDigit (suc (suc (suc (suc (suc (suc (suc (suc (suc zero))))))))) = '9'
+printDigit 0F = '0'
+printDigit 1F = '1'
+printDigit 2F = '2'
+printDigit 3F = '3'
+printDigit 4F = '4'
+printDigit 5F = '5'
+printDigit 6F = '6'
+printDigit 7F = '7'
+printDigit 8F = '8'
+printDigit 9F = '9'
 
 -- Parse an ASCII character into a Fin 10 digit
 parseDigit : Char → Maybe (Fin 10)
-parseDigit '0' = just (zero)
-parseDigit '1' = just (suc zero)
-parseDigit '2' = just (suc (suc zero))
-parseDigit '3' = just (suc (suc (suc zero)))
-parseDigit '4' = just (suc (suc (suc (suc zero))))
-parseDigit '5' = just (suc (suc (suc (suc (suc zero)))))
-parseDigit '6' = just (suc (suc (suc (suc (suc (suc zero))))))
-parseDigit '7' = just (suc (suc (suc (suc (suc (suc (suc zero)))))))
-parseDigit '8' = just (suc (suc (suc (suc (suc (suc (suc (suc zero))))))))
-parseDigit '9' = just (suc (suc (suc (suc (suc (suc (suc (suc (suc zero)))))))))
+parseDigit '0' = just 0F
+parseDigit '1' = just 1F
+parseDigit '2' = just 2F
+parseDigit '3' = just 3F
+parseDigit '4' = just 4F
+parseDigit '5' = just 5F
+parseDigit '6' = just 6F
+parseDigit '7' = just 7F
+parseDigit '8' = just 8F
+parseDigit '9' = just 9F
 parseDigit _   = nothing
 
 -- Proof that parsing the printed digit recovers the original Fin 10
 parsePrintDigit : ∀ (d : Fin 10) → parseDigit (printDigit d) ≡ just d
-parsePrintDigit zero                                         = refl
-parsePrintDigit (suc zero)                                     = refl
-parsePrintDigit (suc (suc zero))                               = refl
-parsePrintDigit (suc (suc (suc zero)))                         = refl
-parsePrintDigit (suc (suc (suc (suc zero))))                   = refl
-parsePrintDigit (suc (suc (suc (suc (suc zero)))))             = refl
-parsePrintDigit (suc (suc (suc (suc (suc (suc zero))))))       = refl
-parsePrintDigit (suc (suc (suc (suc (suc (suc (suc zero))))))) = refl
-parsePrintDigit (suc (suc (suc (suc (suc (suc (suc (suc zero)))))))) = refl
-parsePrintDigit (suc (suc (suc (suc (suc (suc (suc (suc (suc zero))))))))) = refl
+parsePrintDigit 0F = refl
+parsePrintDigit 1F = refl
+parsePrintDigit 2F = refl
+parsePrintDigit 3F = refl
+parsePrintDigit 4F = refl
+parsePrintDigit 5F = refl
+parsePrintDigit 6F = refl
+parsePrintDigit 7F = refl
+parsePrintDigit 8F = refl
+parsePrintDigit 9F = refl
 
 ------------------------------------------------------------------------
 -- Digit Parser

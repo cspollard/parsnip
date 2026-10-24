@@ -118,13 +118,13 @@ jsonNumToFloat : JSONNumber → Float
 jsonNumToFloat (jsonNumber s integral frac exp) =
   let
     finToFloat : Fin 10 → Float
-    finToFloat n = fromℤ (+ Data.Fin.toℕ n)
+    finToFloat n = fromℤ (+_ (Data.Fin.toℕ n))
 
     fracFloat : List (Fin 10) → Float
     fracFloat []       = 0.0
     fracFloat (d ∷ ds) = (finToFloat d + fracFloat ds) ÷ 10.0
 
-    baseVal = fromℤ (+ integral) + fracFloat frac
+    baseVal = fromℤ (+_ integral) + fracFloat frac
   in case s of λ where
        - → 0.0 f- baseVal
        + → baseVal
