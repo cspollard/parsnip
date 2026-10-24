@@ -7,7 +7,7 @@
 -- shape (its type, plus the payload of a leaf or the length of an array,
 -- or the keys of an object) and one child per position.
 --
--- * Arrays are `ListC = ℕ ▷ Fin`.
+-- * Arrays are `ListC = ℕ ▷ Fin` (`Data.Container.List`).
 -- * Objects are `ObjectC = List (List Char) ▷ (Fin ∘ length)`: keys in order,
 --   one child per key.  RFC 8259 §4 only says that names SHOULD be
 --   unique, so duplicate keys are representable (and round-trip).
@@ -48,24 +48,7 @@ module JSONCont where
   -- Arrays and objects as containers
   ----------------------------------------------------------------------
 
-  ListC : Container 0ℓ 0ℓ
-  ListC = ℕ ▷ Fin
-
-  foldListC : (A → B → B) → B → ⟦ ListC ⟧ A → B
-  foldListC f b (n , lookup) = go n lookup
-    where
-    go : ∀ n → (Fin n → _) → _
-    go zero _ = b
-    go (suc k) pos = f (pos zero) (go k (pos ∘ suc))
-
-  listCToList : ⟦ ListC ⟧ A → List A
-  listCToList = foldListC _∷_ []
-
-  listToListC : List A → ⟦ ListC ⟧ A
-  listToListC = L.foldr add (zero , λ ())
-    where
-    add : _ → ⟦ ListC ⟧ _ → ⟦ ListC ⟧ _
-    add x p = suc (proj₁ p) , λ { zero → x; (suc i) → proj₂ p i }
+  open import Data.Container.List public
 
   -- Keys are `List Char`, like string payloads.
   Key : Set

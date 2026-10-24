@@ -38,25 +38,7 @@ Attributes = List Attribute
 
 module XMLCont where
 
-  ListC : Container 0ℓ 0ℓ
-  ListC = ℕ ▷ Fin
-
-  foldListC : (A → B → B) → B → ⟦ ListC ⟧ A → B
-  foldListC f b (n , lookup) = go n lookup
-    where
-    go : ∀ n → (Fin n → _) → _
-    go zero _ = b
-    go (suc k) pos = f (pos zero) (go k (pos ∘ suc))
-
-  listCToList : ⟦ ListC ⟧ A → List A
-  listCToList = foldListC _∷_ []
-
-  listToListC : List A → ⟦ ListC ⟧ A
-  listToListC = L.foldr add (zero , λ ())
-    where
-      import Data.List as L
-      add : A → ⟦ ListC ⟧ A → ⟦ ListC ⟧ A
-      add x (fst , snd) = suc fst , λ { zero → x; (suc i) → snd i }
+  open import Data.Container.List public
 
   data XMLShape : Set where
     textₛ    : String → XMLShape
