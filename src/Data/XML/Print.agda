@@ -4,10 +4,8 @@
 -- Printing XML
 --
 -- One printer, a catamorphism (`foldXMLM`) over the AST.  Text and
--- attribute values are escaped with the predefined entities; characters
--- that XML parsers normalise away (`\r` everywhere, tab and newline in
--- values) are written as numeric references so that they survive
--- parsing.  An element with no content is self-closing.
+-- attribute values are escaped as in `Data.XML.Escape`.  An element with
+-- no content is self-closing.
 ------------------------------------------------------------------------
 
 module Data.XML.Print where
@@ -19,33 +17,7 @@ open import Data.Product using (_×_; _,_)
 open import Function using (_∘_)
 
 open import Data.XML.AST
-
-------------------------------------------------------------------------
--- Escaping
-------------------------------------------------------------------------
-
-entity : String → List Char
-entity s = '&' ∷ String.toList s ++ ';' ∷ []
-
--- Escapes common to text and attribute values.
-escapeCommon : Char → List Char
-escapeCommon '&'  = entity "amp"
-escapeCommon '<'  = entity "lt"
-escapeCommon '>'  = entity "gt"
-escapeCommon '\r' = entity "#13"
-escapeCommon c    = c ∷ []
-
-escapeText : Text → List Char
-escapeText = concat ∘ map escapeCommon
-
-escapeValue : Text → List Char
-escapeValue = concat ∘ map esc
-  where
-  esc : Char → List Char
-  esc '"'  = entity "quot"
-  esc '\t' = entity "#9"
-  esc '\n' = entity "#10"
-  esc c    = escapeCommon c
+open import Data.XML.Escape using (escapeText; escapeValue)
 
 ------------------------------------------------------------------------
 -- Elements
