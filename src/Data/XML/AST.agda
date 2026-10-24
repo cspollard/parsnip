@@ -1,117 +1,135 @@
 {-# OPTIONS --safe --cubical-compatible -WnoUnsupportedIndexedMatch #-}
 
+------------------------------------------------------------------------
+-- The XML AST as a free monad over a container
+--
+-- A document is `XMLC ⋆ ⊥` (`Data.Container.FreeMonad`).  Every node is an
+-- element; its shape is the tag, the attributes, and the text around its
+-- `n` children, and it has one child per position (`Fin n`).
+--
+-- * Text uses XML's mixed-content layout: an element with `n` children
+--   carries `n + 1` text slots, `t₀ e₁ t₁ … eₙ tₙ`, where an empty slot
+--   means "no text".  There are no text nodes, so adjacent text nodes
+--   cannot be written down and every content has a unique representation.
+-- * The shape also carries evidence (`Data.XML.Valid`) that names and
+--   characters are legal XML and that attribute names are unique, so
+--   ill-formed documents are unrepresentable.  The evidence is `T b`,
+--   definitionally irrelevant; for literals Agda fills it in, otherwise
+--   see `Data.XML.Sanitize` for total constructors.
+-- * Payloads are `List Char`: the `String ↔ List Char` round trip is not
+--   provable under `--safe` (see plans/JSONPlan.md).
+-- * Attributes are an ordered list, kept in source order.
+------------------------------------------------------------------------
+
 module Data.XML.AST where
 
-open import Level using (0ℓ; Level) renaming (suc to lsuc)
-open import Data.Bool using (Bool; true; false)
+open import Level using (0ℓ; Level)
+open import Data.Bool using (Bool; true; false; _∧_; T)
 open import Data.Nat using (ℕ; zero; suc)
-open import Data.String using (String)
-open import Data.List using (List; []; _∷_; length; lookup)
-open import Data.Product using (_×_; _,_; proj₁; proj₂)
-open import Data.Unit using (⊤; tt)
+open import Data.List using (List; []; _∷_)
+open import Data.Product using (_×_; _,_)
+open import Data.Unit using (tt)
 open import Data.Empty using (⊥)
 open import Data.Fin using (Fin; zero; suc)
+open import Data.Vec using (Vec; []; _∷_; replicate)
 open import Function using (_∘_)
-open import Data.Container hiding (refl)
-import Data.Container.Combinator as CC
-open import Data.Container.FreeMonad as FM
+open import Data.Container using (Container; ⟦_⟧; _▷_)
+open import Data.Container.FreeMonad as FM using (_⋆_)
+
+open import Data.Container.List
+open import Data.XML.Valid
+open import Data.XML.Valid public using (Name; Text; Attribute; Attributes)
 
 private variable
   a b : Level
   A : Set a
   B : Set b
 
-------------------------------------------------------------------------
--- XML Attributes
-------------------------------------------------------------------------
-
--- XML attributes as key-value pairs
-Attribute : Set
-Attribute = String × String
-
-Attributes : Set
-Attributes = List Attribute
-
-------------------------------------------------------------------------
--- Container & Free Monad Formulations
-------------------------------------------------------------------------
-
+-- put in module to avoid clashes
 module XMLCont where
 
-  open import Data.Container.List public
+  ----------------------------------------------------------------------
+  -- The signature of XML elements
+  ----------------------------------------------------------------------
 
-  data XMLShape : Set where
-    textₛ    : String → XMLShape
-    elementₛ : (tag : String) (attrs : Attributes) (arity : ℕ) → XMLShape
-
-  XMLPosition : XMLShape → Set
-  XMLPosition (textₛ _)            = ⊥
-  XMLPosition (elementₛ _ _ arity) = Fin arity
+  record XMLShape : Set where
+    constructor shape
+    field
+      tag        : Name
+      attrs      : Attributes
+      arity      : ℕ
+      texts      : Vec Text (suc arity)
+      validTag   : T (isValidName tag)
+      validAttrs : T (isValidAttrs attrs)
+      validTexts : T (isValidTexts texts)
 
   XMLC : Container 0ℓ 0ℓ
-  XMLC = XMLShape ▷ XMLPosition
-
-  XMLContainer : Container 0ℓ 0ℓ
-  XMLContainer = XMLC
+  XMLC = XMLShape ▷ (Fin ∘ XMLShape.arity)
 
   XMLM : Set a → Set a
   XMLM A = XMLC ⋆ A
 
-  XML : Set a → Set a
-  XML = XMLM
-
+  -- it's better to use XMLM ⊥ rather than ∀ {a} {A : Set a} → XMLM A
+  -- they are isomorphic, but the latter has poor compilation properties
   XMLDoc : Set
   XMLDoc = XMLM ⊥
 
-  foldXMLC : (String → B) → (String → Attributes → List B → B) → ⟦ XMLC ⟧ B → B
-  foldXMLC fText fElem (textₛ s , _) = fText s
-  foldXMLC fText fElem (elementₛ tag attrs n , pos) = fElem tag attrs (listCToList (n , pos))
+  ----------------------------------------------------------------------
+  -- Folds
+  ----------------------------------------------------------------------
 
-  foldXMLM : (A → B) → (String → B) → (String → Attributes → List B → B) → XMLM A → B
-  foldXMLM f g h = FM.foldr f (foldXMLC g h)
+  -- The content of an element: the text before the first child, then each
+  -- child followed by the text after it.
+  Content : Set b → Set b
+  Content B = Text × List (B × Text)
 
-  text : String → XMLM A
-  text s = FM.impure (textₛ s , λ ())
+  mixed : ∀ n → Vec Text (suc n) → (Fin n → B) → Content B
+  mixed zero    (t ∷ [])  f = t , []
+  mixed (suc n) (t ∷ ts) f with mixed n ts (f ∘ suc)
+  ... | t′ , rest = t , (f zero , t′) ∷ rest
 
-  elementList : (tag : String) → (attrs : Attributes) → (children : List (XMLM A)) → XMLM A
-  elementList tag attrs children =
-    let (n , pos) = listToListC children
-    in FM.impure (elementₛ tag attrs n , pos)
+  foldXMLC : (Name → Attributes → Content B → B) → ⟦ XMLC ⟧ B → B
+  foldXMLC alg (s , f) = alg tag attrs (mixed arity texts f)
+    where open XMLShape s
 
-  elementC : (tag : String) → (attrs : Attributes) → ⟦ ListC ⟧ (XMLM A) → XMLM A
-  elementC tag attrs (n , pos) = FM.impure (elementₛ tag attrs n , pos)
+  foldXMLM : (A → B) → (Name → Attributes → Content B → B) → XMLM A → B
+  foldXMLM f alg = FM.foldr f (foldXMLC alg)
 
-  leafElement : (tag : String) (attrs : Attributes) → XMLM A
-  leafElement tag attrs = elementList tag attrs []
+  ----------------------------------------------------------------------
+  -- Constructors
+  ----------------------------------------------------------------------
 
-  svg : Attributes → List (XMLM A) → XMLM A
-  svg attrs children = elementList "svg" (("xmlns" , "http://www.w3.org/2000/svg") ∷ attrs) children
+  -- An element given as its shape components: `n + 1` text slots and `n`
+  -- children.
+  node : (tag : Name) (attrs : Attributes) {n : ℕ}
+         (texts : Vec Text (suc n)) (cs : Fin n → XMLM A)
+         {pt : T (isValidName tag)} {pa : T (isValidAttrs attrs)}
+         {px : T (isValidTexts texts)} → XMLM A
+  node tag attrs texts cs {pt} {pa} {px} = FM.impure (shape tag attrs _ texts pt pa px , cs)
 
-  g : Attributes → List (XMLM A) → XMLM A
-  g attrs children = elementList "g" attrs children
+  private
+    leafOK : ∀ {b} → T b → T (b ∧ true)
+    leafOK {true} _ = tt
 
-  path : (d : String) → Attributes → XMLM A
-  path d attrs = leafElement "path" (("d" , d) ∷ attrs)
+    replicate-valid : ∀ n → T (isValidTexts (replicate n []))
+    replicate-valid zero    = tt
+    replicate-valid (suc n) = replicate-valid n
 
-  circle : (cx cy r : String) → Attributes → XMLM A
-  circle cx cy r attrs = leafElement "circle" (("cx" , cx) ∷ ("cy" , cy) ∷ ("r" , r) ∷ attrs)
+  -- An element with only text.
+  leaf : (tag : Name) (attrs : Attributes) (t : Text)
+         {pt : T (isValidName tag)} {pa : T (isValidAttrs attrs)} {px : T (isValidText t)} → XMLM A
+  leaf tag attrs t {pt} {pa} {px} = node tag attrs (t ∷ []) (λ ()) {pt} {pa} {leafOK px}
 
-  rect : (x y width height : String) → Attributes → XMLM A
-  rect x y w h attrs = leafElement "rect" (("x" , x) ∷ ("y" , y) ∷ ("width" , w) ∷ ("height" , h) ∷ attrs)
+  -- An element with only element children.
+  parent : (tag : Name) (attrs : Attributes) → ⟦ ListC ⟧ (XMLM A) →
+           {pt : T (isValidName tag)} {pa : T (isValidAttrs attrs)} → XMLM A
+  parent tag attrs (n , cs) {pt} {pa} = node tag attrs (replicate (suc n) []) cs {pt} {pa} {replicate-valid (suc n)}
 
-  polygon : (points : String) → Attributes → XMLM A
-  polygon pts attrs = leafElement "polygon" (("points" , pts) ∷ attrs)
-
-  polyline : (points : String) → Attributes → XMLM A
-  polyline pts attrs = leafElement "polyline" (("points" , pts) ∷ attrs)
+  parentList : (tag : Name) (attrs : Attributes) → List (XMLM A) →
+               {pt : T (isValidName tag)} {pa : T (isValidAttrs attrs)} → XMLM A
+  parentList tag attrs cs {pt} {pa} = parent tag attrs (listToListC cs) {pt} {pa}
 
 open XMLCont public using
-  ( ListC; listCToList; listToListC
-  ; XMLShape; textₛ; elementₛ; XMLPosition; XMLC; XMLContainer
-  ; XMLM; XML; XMLDoc
-  ; foldXMLC; foldXMLM
-  ; text; elementList; elementC; leafElement
-  ; svg; g; path; circle; rect; polygon; polyline
+  ( XMLShape; shape; XMLC; XMLM; XMLDoc; Content; mixed
+  ; foldXMLC; foldXMLM; node; leaf; parent; parentList
   )
-
-open FM public using (pure; impure)

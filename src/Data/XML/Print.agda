@@ -1,152 +1,71 @@
 {-# OPTIONS --safe --cubical-compatible -WnoUnsupportedIndexedMatch #-}
 
+------------------------------------------------------------------------
+-- Printing XML
+--
+-- One printer, a catamorphism (`foldXMLM`) over the AST.  Text and
+-- attribute values are escaped with the predefined entities; characters
+-- that XML parsers normalise away (`\r` everywhere, tab and newline in
+-- values) are written as numeric references so that they survive
+-- parsing.  An element with no content is self-closing.
+------------------------------------------------------------------------
+
 module Data.XML.Print where
 
 open import Data.Char using (Char)
-open import Data.Char.Properties using (_≟_)
-open import Data.String as String using (String; toList; fromList)
-open import Data.List as List using (List; []; _∷_; _++_; concat)
+open import Data.String as String using (String; fromList)
+open import Data.List as List using (List; []; _∷_; _++_; concat; map)
 open import Data.Product using (_×_; _,_)
-open import Data.Unit using (⊤; tt)
 open import Function using (_∘_)
-open import Relation.Nullary.Decidable using (Dec; yes; no)
-open import Relation.Binary.PropositionalEquality using (_≡_)
 
 open import Data.XML.AST
 
-open import Data.List.Relation.Unary.Any using (Any; here; there; any?)
-
 ------------------------------------------------------------------------
--- Helpers: Tag Name, Attribute, & Text Escaping
+-- Escaping
 ------------------------------------------------------------------------
 
--- Association table membership via Char decidable equality
-_∈-table?_ : (c : Char) (table : List (Char × Char)) → Dec (Any (λ (k , _) → c ≡ k) table)
-c ∈-table? table = any? (λ (k , _) → c ≟ k) table
+entity : String → List Char
+entity s = '&' ∷ String.toList s ++ ';' ∷ []
 
-lookupEscape : ∀ {c : Char} {table : List (Char × Char)} → Any (λ (k , _) → c ≡ k) table → Char
-lookupEscape (here {x = _ , v} _) = v
-lookupEscape (there p)            = lookupEscape p
+-- Escapes common to text and attribute values.
+escapeCommon : Char → List Char
+escapeCommon '&'  = entity "amp"
+escapeCommon '<'  = entity "lt"
+escapeCommon '>'  = entity "gt"
+escapeCommon '\r' = entity "#13"
+escapeCommon c    = c ∷ []
 
-escapeList : List (Char × Char) → List Char → List Char
-escapeList table []       = []
-escapeList table (c ∷ cs) with c ∈-table? table
-... | yes p = '\\' ∷ lookupEscape p ∷ escapeList table cs
-... | no  _ = c ∷ escapeList table cs
+escapeText : Text → List Char
+escapeText = concat ∘ map escapeCommon
 
--- Escape tables
-escapeNameChars : List (Char × Char)
-escapeNameChars =
-  ('\\' , '\\') ∷
-  (' '  , 's')  ∷
-  ('\t' , 't')  ∷
-  ('\n' , 'n')  ∷
-  ('\r' , 'r')  ∷
-  ('>'  , 'g')  ∷
-  ('/'  , 'f')  ∷
-  ('='  , 'e')  ∷
-  ('<'  , 'l')  ∷
-  ('!'  , 'b')  ∷ []
+escapeValue : Text → List Char
+escapeValue = concat ∘ map esc
+  where
+  esc : Char → List Char
+  esc '"'  = entity "quot"
+  esc '\t' = entity "#9"
+  esc '\n' = entity "#10"
+  esc c    = escapeCommon c
 
-escapeAttrChars : List (Char × Char)
-escapeAttrChars =
-  ('\\' , '\\') ∷
-  ('"'  , '"')  ∷
-  ('<'  , 'l')  ∷
-  ('>'  , 'g')  ∷
-  ('&'  , 'a')  ∷ []
+------------------------------------------------------------------------
+-- Elements
+------------------------------------------------------------------------
 
-escapeTextChars : List (Char × Char)
-escapeTextChars =
-  ('\\' , '\\') ∷
-  ('<'  , 'l')  ∷
-  ('>'  , 'g')  ∷
-  ('&'  , 'a')  ∷
-  (' '  , 's')  ∷
-  ('\t' , 't')  ∷
-  ('\n' , 'n')  ∷
-  ('\r' , 'r')  ∷ []
-
-escapeName : List Char → List Char
-escapeName = escapeList escapeNameChars
-
-printName : String → List Char
-printName s with toList s
-... | []     = '\\' ∷ '0' ∷ []
-... | c ∷ cs = escapeName (c ∷ cs)
-
-escapeAttr : List Char → List Char
-escapeAttr = escapeList escapeAttrChars
-
--- Format a single attribute: ` key="val"`
 printAttribute : Attribute → List Char
-printAttribute (k , v) =
-  ' ' ∷ printName k ++ ('=' ∷ '"' ∷ escapeAttr (toList v) ++ ('"' ∷ []))
+printAttribute (k , v) = ' ' ∷ k ++ '=' ∷ '"' ∷ escapeValue v ++ '"' ∷ []
 
 printAttributes : Attributes → List Char
-printAttributes []       = []
-printAttributes (a ∷ as) = printAttribute a ++ printAttributes as
+printAttributes = concat ∘ map printAttribute
 
-escapeText : List Char → List Char
-escapeText = escapeList escapeTextChars
-
-printTextContent : String → List Char
-printTextContent s = escapeText (toList s) ++ ('\\' ∷ 'e' ∷ [])
-
-------------------------------------------------------------------------
--- XML Serialization
-------------------------------------------------------------------------
+printElement : Name → Attributes → Content (List Char) → List Char
+printElement tag attrs ([] , []) = '<' ∷ tag ++ printAttributes attrs ++ ' ' ∷ '/' ∷ '>' ∷ []
+printElement tag attrs (t , cs)  =
+  '<' ∷ tag ++ printAttributes attrs ++ '>' ∷
+  escapeText t ++ concat (map (λ { (c , t′) → c ++ escapeText t′ }) cs) ++
+  '<' ∷ '/' ∷ tag ++ '>' ∷ []
 
 printXML : XMLDoc → List Char
-printXML = foldXMLM (λ ()) printText printElem
-  where
-    printText : String → List Char
-    printText = printTextContent
+printXML = foldXMLM (λ ()) printElement
 
-    printElem : String → Attributes → List (List Char) → List Char
-    printElem tag attrs [] =
-      '<' ∷ printName tag ++ printAttributes attrs ++ (' ' ∷ '/' ∷ '>' ∷ [])
-    printElem tag attrs (c ∷ cs) =
-      '<' ∷ printName tag ++ printAttributes attrs ++ ('>' ∷ concat (c ∷ cs) ++ ('<' ∷ '/' ∷ printName tag ++ ('>' ∷ [])))
-
--- Render XML document to String
 renderXML : XMLDoc → String
 renderXML = fromList ∘ printXML
-
-------------------------------------------------------------------------
--- Direct SVG Document Rendering (Compliant & Fast Serialization)
-------------------------------------------------------------------------
-
-escapeSVGChar : Char → List Char
-escapeSVGChar '&' = '&' ∷ 'a' ∷ 'm' ∷ 'p' ∷ ';' ∷ []
-escapeSVGChar '<' = '&' ∷ 'l' ∷ 't' ∷ ';' ∷ []
-escapeSVGChar '>' = '&' ∷ 'g' ∷ 't' ∷ ';' ∷ []
-escapeSVGChar '"' = '&' ∷ 'q' ∷ 'u' ∷ 'o' ∷ 't' ∷ ';' ∷ []
-escapeSVGChar c   = c ∷ []
-
-escapeSVGChars : List Char → List Char
-escapeSVGChars []       = []
-escapeSVGChars (c ∷ cs) = escapeSVGChar c ++ escapeSVGChars cs
-
-printSVGTextContent : String → List Char
-printSVGTextContent s = escapeSVGChars (toList s)
-
-printSVGAttribute : Attribute → List Char
-printSVGAttribute (k , v) =
-  ' ' ∷ toList k ++ ('=' ∷ '"' ∷ escapeSVGChars (toList v) ++ ('"' ∷ []))
-
-printSVGAttributes : Attributes → List Char
-printSVGAttributes []       = []
-printSVGAttributes (a ∷ as) = printSVGAttribute a ++ printSVGAttributes as
-
-printSVGDoc : XMLDoc → List Char
-printSVGDoc = foldXMLM (λ ()) printSVGTextContent printSVGElem
-  where
-    printSVGElem : String → Attributes → List (List Char) → List Char
-    printSVGElem tag attrs [] =
-      '<' ∷ toList tag ++ printSVGAttributes attrs ++ (' ' ∷ '/' ∷ '>' ∷ [])
-    printSVGElem tag attrs (c ∷ cs) =
-      '<' ∷ toList tag ++ printSVGAttributes attrs ++ ('>' ∷ concat (c ∷ cs) ++ ('<' ∷ '/' ∷ toList tag ++ ('>' ∷ [])))
-
-renderSVG : XMLDoc → String
-renderSVG = fromList ∘ printSVGDoc
