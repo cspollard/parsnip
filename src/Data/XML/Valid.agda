@@ -29,6 +29,8 @@ open import Data.List using (List; []; _∷_)
 open import Data.Bool.ListAction using (all; any)
 open import Data.Product using (_×_; _,_; proj₁; proj₂)
 open import Data.Vec using (Vec; []; _∷_)
+open import Data.Product using (∃)
+open import Relation.Binary.PropositionalEquality using (_≡_; refl)
 
 Name Text : Set
 Name = List Char
@@ -105,3 +107,24 @@ isValidAttrs as = all isValidAttribute as ∧ uniqueKeys as
 isValidTexts : ∀ {n} → Vec Text n → Bool
 isValidTexts []       = true
 isValidTexts (t ∷ ts) = isValidText t ∧ isValidTexts ts
+
+------------------------------------------------------------------------
+-- Facts used by the lexer
+------------------------------------------------------------------------
+
+∧-join : ∀ {a b} → a ≡ true → b ≡ true → a ∧ b ≡ true
+∧-join refl refl = refl
+
+∧-split : ∀ {a b} → a ∧ b ≡ true → a ≡ true × b ≡ true
+∧-split {true}  h = refl , h
+∧-split {false} ()
+
+-- A valid name is a name-start character followed by name characters.
+validName-chars : ∀ n → isValidName n ≡ true →
+  ∃ λ c → ∃ λ n′ → n ≡ c ∷ n′ × isNameChar c ≡ true × all isNameChar n′ ≡ true
+validName-chars []       ()
+validName-chars (c ∷ n) h with ∧-split h
+... | hs , hn = c , n , refl , start⇒char c hs , hn
+  where
+  start⇒char : ∀ c → isNameStart c ≡ true → isNameChar c ≡ true
+  start⇒char c hs rewrite hs = refl

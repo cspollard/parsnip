@@ -37,10 +37,10 @@ open import Data.List.Relation.Unary.All as All using (All; []; _∷_)
 open import Data.List.Relation.Unary.Any using (Any; here; there)
 open import Data.List.Membership.Propositional using (_∈_)
 open import Data.Maybe as Maybe using (Maybe; just; nothing)
-open import Data.Product using (_×_; _,_; proj₁; map₁)
+open import Data.Product using (_×_; _,_; proj₁; map₁; ∃)
 open import Data.Empty using (⊥; ⊥-elim)
 open import Relation.Nullary.Decidable using (Dec; yes; no)
-open import Relation.Binary.PropositionalEquality using (_≡_; refl; sym; trans; cong)
+open import Relation.Binary.PropositionalEquality using (_≡_; refl; sym; trans; cong; subst)
 
 open import Data.XML.Valid using (Name; Text; isValidChar; eqName)
 
@@ -245,3 +245,15 @@ lexBody-escapeValue : ∀ cs rest →
 lexBody-escapeValue =
   lexBody-escapeWith valueTable valueTable-ok (here refl) '"'
     (there (there (there (there (here refl))))) (λ ())
+
+-- Escaped text never starts with `<`.
+escapeText-head : ∀ c cs → ∃ λ d → ∃ λ ds → escapeText (c ∷ cs) ≡ d ∷ ds × (d ≡ '<' → ⊥)
+escapeText-head c cs = go (lookupEntry textTable c) refl
+  where
+  go : ∀ r → lookupEntry textTable c ≡ r →
+       ∃ λ d → ∃ λ ds → escapeText (c ∷ cs) ≡ d ∷ ds × (d ≡ '<' → ⊥)
+  go (just n) eq =
+    '&' , _ , cong (_++ escapeText cs) (escapeChar-just textTable c n eq) , (λ ())
+  go nothing eq =
+    c , escapeText cs , cong (_++ escapeText cs) (escapeChar-nothing textTable c eq)
+      , (λ e → lookupEntry-¬key textTable c eq (subst (λ k → HasKey k textTable) (sym e) (there (here refl))))

@@ -27,7 +27,7 @@ open import Level using (0ℓ; Level)
 open import Data.Bool using (Bool; true; false; _∧_; T)
 open import Data.Nat using (ℕ; zero; suc)
 open import Data.List using (List; []; _∷_)
-open import Data.Product using (_×_; _,_)
+open import Data.Product using (_×_; _,_; Σ; proj₁; proj₂)
 open import Data.Unit using (tt)
 open import Data.Empty using (⊥)
 open import Data.Fin using (Fin; zero; suc)
@@ -85,8 +85,23 @@ module XMLCont where
 
   mixed : ∀ n → Vec Text (suc n) → (Fin n → B) → Content B
   mixed zero    (t ∷ [])  f = t , []
-  mixed (suc n) (t ∷ ts) f with mixed n ts (f ∘ suc)
-  ... | t′ , rest = t , (f zero , t′) ∷ rest
+  mixed (suc n) (t ∷ ts) f =
+    let m = mixed n ts (f ∘ suc) in t , (f zero , proj₁ m) ∷ proj₂ m
+
+  -- The data of an element's content: its arity, text slots and children.
+  NodeData : Set b → Set b
+  NodeData B = Σ ℕ (λ n → Vec Text (suc n) × (Fin n → B))
+
+  consNode : Text → B → NodeData B → NodeData B
+  consNode t b (n , ts , f) = suc n , t ∷ ts , λ { zero → b; (suc i) → f i }
+
+  -- The inverse of `mixed`.
+  fromContent′ : Text → List (B × Text) → NodeData B
+  fromContent′ t []             = zero , (t ∷ []) , λ ()
+  fromContent′ t ((b , t′) ∷ cs) = consNode t b (fromContent′ t′ cs)
+
+  fromContent : Content B → NodeData B
+  fromContent (t , cs) = fromContent′ t cs
 
   foldXMLC : (Name → Attributes → Content B → B) → ⟦ XMLC ⟧ B → B
   foldXMLC alg (s , f) = alg tag attrs (mixed arity texts f)
@@ -130,6 +145,6 @@ module XMLCont where
   parentList tag attrs cs {pt} {pa} = parent tag attrs (listToListC cs) {pt} {pa}
 
 open XMLCont public using
-  ( XMLShape; shape; XMLC; XMLM; XMLDoc; Content; mixed
+  ( XMLShape; shape; XMLC; XMLM; XMLDoc; Content; mixed; NodeData; consNode; fromContent′; fromContent
   ; foldXMLC; foldXMLM; node; leaf; parent; parentList
   )
