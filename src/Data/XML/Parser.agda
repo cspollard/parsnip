@@ -401,7 +401,7 @@ parseTokens-printTokens v with parseElement-print v [] (suc (length (printTokens
 defaultDoc : XMLDoc
 defaultDoc = parent ('a' ∷ []) [] (zero , λ ())
 
--- `parser` (see `Data.XML.Goals`).  `to` pairs the tokens with the proof that
+-- `parser`.  `to` pairs the tokens with the proof that
 -- they are valid; `from` parses, with `defaultDoc` where parsing fails.
 parser : RightInverse XMLSetoid ValidTokens
 parser = record

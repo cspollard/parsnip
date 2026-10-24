@@ -188,7 +188,7 @@ private
     trans (cong (λ m → proj₁ (lexValidMaybe m)) (tokenize-printTokenList ts v))
           (lexValid′-valid ts (validTokenSeq? ts) v)
 
--- `lexer` (see `Data.XML.Goals`).
+-- `lexer`.
 lexer : RightInverse ValidTokens Chars
 lexer = record
   { to        = λ x → printTokenList (proj₁ x)
