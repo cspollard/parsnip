@@ -12,7 +12,7 @@
 --   one child per key.  RFC 8259 §4 only says that names SHOULD be
 --   unique, so duplicate keys are representable (and round-trip).
 -- * String payloads are `List Char`: the `String ↔ List Char` round trip
---   is not provable under `--safe` (see JSONPlan.md).  `stringⱼ` accepts
+--   is not provable under `--safe` (see plans/JSONPlan.md).  `stringⱼ` accepts
 --   a `String` for convenience.
 ------------------------------------------------------------------------
 
