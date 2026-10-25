@@ -32,6 +32,8 @@ open import Data.Vec using (Vec; []; _∷_)
 open import Data.Product using (∃)
 open import Relation.Binary.PropositionalEquality using (_≡_; refl)
 
+open import Data.Char.Class public using (inRange; is; range; isValidChar)
+
 Name Text : Set
 Name = List Char
 Text = List Char
@@ -45,21 +47,6 @@ Attributes = List Attribute
 ------------------------------------------------------------------------
 -- Characters
 ------------------------------------------------------------------------
-
--- `lo ≤ toℕ c ≤ hi`
-inRange : ℕ → ℕ → Char → Bool
-inRange lo hi c = not (toℕ c <ᵇ lo) ∧ (toℕ c <ᵇ suc hi)
-
-is : Char → Char → Bool
-is c d = toℕ c ≡ᵇ toℕ d
-
-range : Char → Char → Char → Bool
-range lo hi = inRange (toℕ lo) (toℕ hi)
-
-isValidChar : Char → Bool
-isValidChar c =
-    is '\t' c ∨ is '\n' c ∨ is '\r' c
-  ∨ inRange 0x20 0xD7FF c ∨ inRange 0xE000 0xFFFD c ∨ inRange 0x10000 0x10FFFF c
 
 isValidText : Text → Bool
 isValidText = all isValidChar

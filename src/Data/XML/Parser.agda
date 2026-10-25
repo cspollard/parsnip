@@ -43,7 +43,7 @@ open import Data.XML.AST
 open import Data.XML.Valid
 open import Data.XML.Equality
 open import Data.XML.Token
-open import Data.XML.Lexer using (ValidTokens; Run; isText)
+open import Data.XML.Lexer using (ValidTokens; Run; isText; valid-run)
 open import Data.XML.Tokens
 open import Data.Stage using (Subtype)
 
@@ -420,7 +420,7 @@ defaultDoc = parent ('a' ∷ []) [] (zero , λ p → noPos p)
 -- they are valid; `from` parses, with `defaultDoc` where parsing fails.
 parser : RightInverse XMLSetoid ValidTokens
 parser = record
-  { to        = λ v → printTokens v , printTokens-valid v
+  { to        = λ v → printTokens v , valid-run (printTokens-valid v)
   ; from      = λ x → fromMaybe defaultDoc (parseTokens (proj₁ x))
   ; to-cong   = printTokens-cong
   ; from-cong = λ { refl → ≈ₓ-refl }

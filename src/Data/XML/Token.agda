@@ -42,6 +42,7 @@ open import Relation.Binary.PropositionalEquality
 
 open import Data.XML.Valid
 open import Data.XML.Escape
+open import Data.Lexer.Whitespace
 
 ------------------------------------------------------------------------
 -- Tokens and their spelling
@@ -75,8 +76,7 @@ printToken (closeT n)   = '<' ∷ '/' ∷ n ++ '>' ∷ []
 printToken (textT t)    = escapeText t
 
 printTokenList : List XMLToken → List Char
-printTokenList []       = []
-printTokenList (t ∷ ts) = printToken t ++ printTokenList ts
+printTokenList = concatMap printToken
 
 ------------------------------------------------------------------------
 -- Well-formed tokens
@@ -102,20 +102,6 @@ TokenFollow _         _    = ⊤
 ------------------------------------------------------------------------
 -- Lexing
 ------------------------------------------------------------------------
-
-whitespace : List Char
-whitespace = ' ' ∷ '\n' ∷ '\t' ∷ '\r' ∷ []
-
--- Drops leading white space; `skipWS′` takes the decision as an argument
--- so that proofs can rewrite exactly that call.
-skipWS : List Char → List Char
-skipWS′ : (c : Char) → List Char → Dec (c ∈ whitespace) → List Char
-
-skipWS []       = []
-skipWS (c ∷ cs) = skipWS′ c cs (c ∈? whitespace)
-
-skipWS′ c cs (yes _) = skipWS cs
-skipWS′ c cs (no  _) = c ∷ cs
 
 -- The longest prefix of name characters, and the rest.
 lexName : List Char → Name × List Char
@@ -245,14 +231,6 @@ lexAttr-print : ∀ c k v rest → NameChars (c ∷ k) →
 lexAttr-print c k v rest nc =
   trans (cong lexAttr₁ (lexName-span (c ∷ k) _ nc refl))
         (cong (lexAttr₂ (c ∷ k)) (lexBody-escapeValue v rest))
-
-NonWS : Char → Set
-NonWS c = c ∈ whitespace → ⊥
-
-skipWS-nonWS : ∀ c cs → NonWS c → skipWS (c ∷ cs) ≡ c ∷ cs
-skipWS-nonWS c cs nw with c ∈? whitespace
-... | yes p = ⊥-elim (nw p)
-... | no  _ = refl
 
 -- Name characters are not white space.
 nonWS-name : ∀ c → isNameChar c ≡ true → NonWS c

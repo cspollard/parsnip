@@ -4,12 +4,13 @@
 -- The tokenizer, and `lexer`: a stdlib RightInverse from valid token
 -- streams to text
 --
--- `tokenize` skips white space and lexes tokens one at a time with
--- `lexToken` (`Data.JSON.Token`).  `lexer` is a `RightInverse` out of
--- `ValidTokens`, the token streams with no two adjacent numbers (the
--- only streams whose printed form re-lexes to themselves).  Its `from`
--- is total by checking validity of the tokenizer's output, which is
--- decidable, and falling back to the empty stream.
+-- An instance of the generic `Data.Lexer`: `tokenize` skips white space
+-- and lexes tokens one at a time with `lexToken` (`Data.JSON.Token`).
+-- `lexer` is a `RightInverse` out of `ValidTokens`, the token streams with
+-- no two adjacent numbers (the only streams whose printed form re-lexes
+-- to themselves).  Its `from` is total by checking validity of the
+-- tokenizer's output, which is decidable, and falling back to the empty
+-- stream.
 ------------------------------------------------------------------------
 
 module Data.JSON.Lexer where
@@ -42,108 +43,10 @@ open import Data.JSON.Number
   using (JSONNumber; jsonNumber; NoLeadingNumCont; printNat-head; printFraction; printExponent)
 open import Data.Sign as Sign using ()
 open import Data.JSON.Token
+open import Data.Lexer using (TokenLang; module Lexing)
 open import Data.JSON.Progress using (lexToken-progress)
-open import Data.Stage using (Chars; Subtype)
+open import Data.Lexer.Whitespace public
 open import Data.Invertible.Char using (parseDigit; printDigit; parsePrintDigit)
-
-------------------------------------------------------------------------
--- White space
-------------------------------------------------------------------------
-
-whitespace : List Char
-whitespace = ' ' ∷ '\n' ∷ '\t' ∷ '\r' ∷ []
-
--- Drops leading white space; `skipWS′` takes the decision as an argument
--- so that proofs can rewrite exactly that call.
-skipWS : List Char → List Char
-skipWS′ : (c : Char) → List Char → Dec (c ∈ whitespace) → List Char
-
-skipWS []       = []
-skipWS (c ∷ cs) = skipWS′ c cs (c ∈? whitespace)
-
-skipWS′ c cs (yes _) = skipWS cs
-skipWS′ c cs (no  _) = c ∷ cs
-
-NonWS : Char → Set
-NonWS c = c ∈ whitespace → ⊥
-
-skipWS-nonWS : ∀ c cs → NonWS c → skipWS (c ∷ cs) ≡ c ∷ cs
-skipWS-nonWS c cs nw with c ∈? whitespace
-... | yes p = ⊥-elim (nw p)
-... | no  _ = refl
-
-------------------------------------------------------------------------
--- The tokenizer
-------------------------------------------------------------------------
-
-tokenizeLoop : ℕ → List Char → Maybe (List JSONToken)
-tokenizeStep : ℕ → List Char → Maybe (List JSONToken)
-tokenizeCons : ℕ → Maybe (JSONToken × List Char) → Maybe (List JSONToken)
-
-tokenizeLoop zero    _  = nothing
-tokenizeLoop (suc f) cs = tokenizeStep f (skipWS cs)
-
-tokenizeStep f []       = just []
-tokenizeStep f (c ∷ cs) = tokenizeCons f (lexToken (c ∷ cs))
-
-tokenizeCons f nothing           = nothing
-tokenizeCons f (just (t , rest)) = Maybe.map (t ∷_) (tokenizeLoop f rest)
-
-tokenize : List Char → Maybe (List JSONToken)
-tokenize cs = tokenizeLoop (suc (length cs)) cs
-
-------------------------------------------------------------------------
--- Fuel
---
--- `tokenize` gives the loop one unit of fuel per input character (plus
--- one), which forces the whole input list before lexing starts.  Any
--- other fuel gives the same answer when it succeeds
--- (`tokenizeLoop-sound`), so a caller that knows the length without
--- building the list (a `String`'s) can let the input stream.
-------------------------------------------------------------------------
-
-skipWS-≤ : ∀ cs → length (skipWS cs) ≤ length cs
-skipWS-≤ []       = z≤n
-skipWS-≤ (c ∷ cs) with c ∈? whitespace
-... | yes _ = ≤-trans (skipWS-≤ cs) (n≤1+n _)
-... | no  _ = ≤-refl
-
--- Fuel never matters once it exceeds the input length.
-tokenizeLoop-fuel : ∀ f g cs → length cs < f → length cs < g → tokenizeLoop f cs ≡ tokenizeLoop g cs
-tokenizeLoop-fuel zero    g       cs ()
-tokenizeLoop-fuel (suc f) zero    cs _ ()
-tokenizeLoop-fuel (suc f) (suc g) cs (s≤s lf) (s≤s lg) = step (skipWS cs) (skipWS-≤ cs)
-  where
-  step : ∀ w → length w ≤ length cs → tokenizeStep f w ≡ tokenizeStep g w
-  step []       _ = refl
-  step (c ∷ w′) w≤ with lexToken (c ∷ w′) in eq
-  ... | nothing           = refl
-  ... | just (t , rest)   =
-    cong (Maybe.map (t ∷_))
-         (tokenizeLoop-fuel f g rest
-            (≤-trans (lexToken-progress (c ∷ w′) t rest eq) (≤-trans w≤ lf))
-            (≤-trans (lexToken-progress (c ∷ w′) t rest eq) (≤-trans w≤ lg)))
-
--- More fuel keeps a successful result.
-tokenizeLoop-mono : ∀ g h cs ts → g ≤ h → tokenizeLoop g cs ≡ just ts → tokenizeLoop h cs ≡ just ts
-tokenizeLoop-mono zero    h       cs ts _       ()
-tokenizeLoop-mono (suc g) zero    cs ts ()
-tokenizeLoop-mono (suc g) (suc h) cs ts (s≤s g≤h) eq = step (skipWS cs) eq
-  where
-  step : ∀ w → tokenizeStep g w ≡ just ts → tokenizeStep h w ≡ just ts
-  step []       e = e
-  step (c ∷ w′) e with lexToken (c ∷ w′)
-  ... | nothing         = e
-  ... | just (t , rest) with tokenizeLoop g rest in eq′
-  step (c ∷ w′) () | just (t , rest) | nothing
-  step (c ∷ w′) refl | just (t , rest) | just ts′ =
-    cong (Maybe.map (t ∷_)) (tokenizeLoop-mono g h rest ts′ g≤h eq′)
-
--- Whatever fuel produced a token stream, `tokenize` produces it too.
-tokenizeLoop-sound : ∀ g cs ts → tokenizeLoop g cs ≡ just ts → tokenize cs ≡ just ts
-tokenizeLoop-sound g cs ts eq with suc (length cs) ≤? g
-... | yes le = trans (tokenizeLoop-fuel (suc (length cs)) g cs (s≤s ≤-refl) le) eq
-... | no ¬le = tokenizeLoop-mono g (suc (length cs)) cs ts (≤-trans (n≤1+n g) (≰⇒> ¬le)) eq
 
 ------------------------------------------------------------------------
 -- Valid token streams
@@ -180,10 +83,6 @@ notAdjacent? x y with isNumber? x | isNumber? y
 
 validTokenSeq? : ∀ ts → Dec (ValidTokenSeq ts)
 validTokenSeq? = Linked.linked? notAdjacent?
-
--- Token streams with no two adjacent numbers (`Data.JSON.Goals.ValidTokens`).
-ValidTokens : Setoid 0ℓ 0ℓ
-ValidTokens = Subtype (setoid (List JSONToken)) ValidTokenSeq
 
 ------------------------------------------------------------------------
 -- Facts about printed tokens
@@ -245,76 +144,36 @@ tokenFollow (boolT _) ts _ = tt
 tokenFollow (stringT _) ts _ = tt
 
 ------------------------------------------------------------------------
--- The tokenizer inverts the printer on valid streams
+-- The token language
 ------------------------------------------------------------------------
 
 private
-  -- One iteration, given the shape of the input and the token it starts with.
-  tokenize-step : ∀ f L c cs t rest → L ≡ c ∷ cs → NonWS c →
-                  lexToken L ≡ just (t , rest) →
-                  tokenizeLoop (suc f) L ≡ Maybe.map (t ∷_) (tokenizeLoop f rest)
-  tokenize-step f .(c ∷ cs) c cs t rest refl nw lt =
-    trans (cong (tokenizeStep f) (skipWS-nonWS c cs nw))
-          (cong (tokenizeCons f) lt)
+  skip-printToken : ∀ t R → skipWS (printToken t ++ R) ≡ printToken t ++ R
+  skip-printToken t R with printToken-cons t
+  ... | c , cs , eq , nw =
+    trans (cong skipWS (cong (_++ R) eq))
+    (trans (skipWS-nonWS c (cs ++ R) nw)
+           (sym (cong (_++ R) eq)))
 
-  -- The fuel left after one token still exceeds the length of the rest.
-  fuel-rest : ∀ (x : List Char) (c : Char) (cs R : List Char) f → x ≡ c ∷ cs → length (x ++ R) < suc f → length R < f
-  fuel-rest .(c ∷ cs) c cs R f refl (s≤s lt′) =
-    ≤-trans (s≤s (subst (length R ≤_) (sym (length-++ cs)) (m≤n+m (length R) (length cs)))) lt′
-
-tokenize-print : ∀ ts → ValidTokenSeq ts → ∀ fuel →
-                 length (printTokenList ts) < fuel →
-                 tokenizeLoop fuel (printTokenList ts) ≡ just ts
-tokenize-print ts v zero ()
-tokenize-print [] v (suc f) _ = refl
-tokenize-print (t ∷ ts) v (suc f) lt with printToken-cons t
-... | c , cs₀ , eq , nw =
-  trans (tokenize-step f (printToken t ++ printTokenList ts) c (cs₀ ++ printTokenList ts) t
-                       (printTokenList ts) (cong (_++ printTokenList ts) eq) nw
-                       (lexToken-printToken t (printTokenList ts) (tokenFollow t ts v)))
-        (cong (Maybe.map (t ∷_))
-              (tokenize-print ts (Linked.tail v) f
-                              (fuel-rest (printToken t) c cs₀ (printTokenList ts) f eq lt)))
-
-tokenize-printTokenList : ∀ ts → ValidTokenSeq ts →
-                          tokenize (printTokenList ts) ≡ just ts
-tokenize-printTokenList ts v =
-  tokenize-print ts v (suc (length (printTokenList ts))) (n<1+n (length (printTokenList ts)))
-
-------------------------------------------------------------------------
--- `lexer`
-------------------------------------------------------------------------
-
--- The tokens of a text, or the empty stream when the text does not lex
--- to a valid stream.
-lexValid′ : ∀ ts → Dec (ValidTokenSeq ts) → Σ[ ts′ ∈ List JSONToken ] ValidTokenSeq ts′
-lexValid′ ts (yes v) = ts , v
-lexValid′ ts (no  _) = [] , []
-
-lexValidMaybe : Maybe (List JSONToken) → Σ[ ts ∈ List JSONToken ] ValidTokenSeq ts
-lexValidMaybe nothing   = [] , []
-lexValidMaybe (just ts) = lexValid′ ts (validTokenSeq? ts)
-
-lexValid : List Char → Σ[ ts ∈ List JSONToken ] ValidTokenSeq ts
-lexValid cs = lexValidMaybe (tokenize cs)
-
-private
-  lexValid′-valid : ∀ ts (d : Dec (ValidTokenSeq ts)) → ValidTokenSeq ts →
-                    proj₁ (lexValid′ ts d) ≡ ts
-  lexValid′-valid ts (yes _) _ = refl
-  lexValid′-valid ts (no ¬v) v = ⊥-elim (¬v v)
-
-  lexValid-print : ∀ ts → ValidTokenSeq ts → proj₁ (lexValid (printTokenList ts)) ≡ ts
-  lexValid-print ts v =
-    trans (cong (λ m → proj₁ (lexValidMaybe m)) (tokenize-printTokenList ts v))
-          (lexValid′-valid ts (validTokenSeq? ts) v)
-
--- `lexer` (see `Data.JSON.Goals`).
-lexer : RightInverse ValidTokens Chars
-lexer = record
-  { to        = λ x → printTokenList (proj₁ x)
-  ; from      = lexValid
-  ; to-cong   = cong (λ x → printTokenList x)
-  ; from-cong = λ { refl → refl }
-  ; inverseʳ  = λ { {x} refl → lexValid-print (proj₁ x) (proj₂ x) }
+jsonLang : TokenLang
+jsonLang = record
+  { Token      = JSONToken
+  ; print      = printToken
+  ; lex        = lexToken
+  ; skip       = skipWS
+  ; skip-nil   = refl
+  ; Valid      = ValidTokenSeq
+  ; valid?     = validTokenSeq?
+  ; valid-nil  = []
+  ; valid-tail = Linked.tail
+  ; print-cons = λ {t} _ → let c , cs , eq , _ = printToken-cons t in c , cs , eq
+  ; skip-print = λ {t} {ts} _ → skip-printToken t (printTokenList ts)
+  ; lex-print  = λ {t} {ts} v → lexToken-printToken t (printTokenList ts) (tokenFollow t ts v)
   }
+
+open Lexing jsonLang public
+  using (ValidTokens; tokenize; tokenizeLoop; lexValid; lexer)
+  renaming (tokenize-printList to tokenize-printTokenList)
+
+open Lexing.Fuel jsonLang skipWS-≤ lexToken-progress public
+  using (tokenizeLoop-fuel; tokenizeLoop-mono; tokenizeLoop-sound)

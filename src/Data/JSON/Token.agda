@@ -15,7 +15,7 @@ module Data.JSON.Token where
 open import Data.Bool using (Bool; true; false)
 open import Data.Char using (Char)
 open import Data.Char.Fast using (_≟_)
-open import Data.List using (List; []; _∷_; _++_)
+open import Data.List using (List; []; _∷_; _++_; concatMap)
 open import Data.List.Properties using (++-assoc; ++-identityʳ)
 open import Data.Maybe as Maybe using (Maybe; just; nothing)
 open import Data.Product using (_×_; _,_; proj₁; map₁)
@@ -59,8 +59,7 @@ printToken (numberT n)   = printNumber n
 printToken (stringT s)   = printStringLiteral s
 
 printTokenList : List JSONToken → List Char
-printTokenList []       = []
-printTokenList (t ∷ ts) = printToken t ++ printTokenList ts
+printTokenList = concatMap printToken
 
 -- What may follow a printed token: a number must not be run into more
 -- number (digit, `.`, `e`, `E`); anything else may follow anything.

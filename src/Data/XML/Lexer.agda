@@ -4,15 +4,19 @@
 -- The tokenizer, and `lexer`: a stdlib RightInverse from valid token
 -- streams to text
 --
--- `tokenize` lexes tokens one at a time with `lexToken`
--- (`Data.XML.Token`); white space is significant, so nothing is skipped.
--- `lexer` is a `RightInverse` out of `ValidTokens`, the token streams
--- that print and lex back to themselves: every token is well formed
--- (`tokenWF`), no two character-data tokens are adjacent (they would
--- print as one), and the stream does not end in character data (which
--- needs a following `<`).  Its `from` is total by checking validity of
--- the tokenizer's output, which is decidable, and falling back to the
--- empty stream.
+-- An instance of the generic `Data.Lexer`: `tokenize` lexes tokens one at
+-- a time with `lexToken` (`Data.XML.Token`); white space is significant,
+-- so nothing is skipped.  `lexer` is a `RightInverse` out of
+-- `ValidTokens`, the token streams that print and lex back to themselves:
+-- every token is well formed (`tokenWF`), no two character-data tokens are
+-- adjacent (they would print as one), and the stream does not end in
+-- character data (which needs a following `<`).  Its `from` is total by
+-- checking validity of the tokenizer's output, which is decidable, and
+-- falling back to the empty stream.
+--
+-- The validity of a stream is stated by `Run p q`, a small state machine
+-- (the state is "the previous token was text"); `ValidSeq` is "valid from
+-- some state", which is closed under tails as `Data.Lexer` needs.
 ------------------------------------------------------------------------
 
 module Data.XML.Lexer where
@@ -36,25 +40,9 @@ open import Relation.Binary.PropositionalEquality
   using (_≡_; refl; sym; trans; cong; subst; setoid)
 
 open import Data.XML.Escape using (escapeText-head)
+open import Data.Lexer using (TokenLang; module Lexing)
 open import Data.XML.Token
 open import Data.Stage using (Chars; Subtype)
-
-------------------------------------------------------------------------
--- The tokenizer
-------------------------------------------------------------------------
-
-tokenizeLoop : ℕ → List Char → Maybe (List XMLToken)
-tokenizeCons : ℕ → Maybe (XMLToken × List Char) → Maybe (List XMLToken)
-
-tokenizeLoop zero    _        = nothing
-tokenizeLoop (suc f) []       = just []
-tokenizeLoop (suc f) (c ∷ cs) = tokenizeCons f (lexToken (c ∷ cs))
-
-tokenizeCons f nothing           = nothing
-tokenizeCons f (just (t , rest)) = Maybe.map (t ∷_) (tokenizeLoop f rest)
-
-tokenize : List Char → Maybe (List XMLToken)
-tokenize cs = tokenizeLoop (suc (length cs)) cs
 
 ------------------------------------------------------------------------
 -- Valid token streams
@@ -92,10 +80,6 @@ run? p q (t ∷ ts) with tokenWF t ≟ᵇ true | T? (not (p ∧ isText t)) | run
 validTokenSeq? : ∀ ts → Dec (ValidTokenSeq ts)
 validTokenSeq? = run? false false
 
--- Token streams that print and lex back (`Data.XML.Goals.ValidTokens`).
-ValidTokens : Setoid 0ℓ 0ℓ
-ValidTokens = Subtype (setoid (List XMLToken)) ValidTokenSeq
-
 ------------------------------------------------------------------------
 -- Facts about printed tokens
 ------------------------------------------------------------------------
@@ -126,74 +110,50 @@ tokenFollow {t = textT _} {ts = t′ ∷ ts} (step _ _ (step _ nt _)) with tag-s
 ... | r , eq = (r ++ printTokenList ts) , cong (_++ printTokenList ts) eq
 
 ------------------------------------------------------------------------
--- The tokenizer inverts the printer on valid streams
+-- The token language
 ------------------------------------------------------------------------
+
+-- A stream is valid if it is, from some state.
+ValidSeq : List XMLToken → Set
+ValidSeq ts = ∃ λ p → Run p false ts
 
 private
-  -- The fuel left after one token still exceeds the length of the rest.
-  fuel-rest : ∀ (x : List Char) (c : Char) (cs R : List Char) f →
-              x ≡ c ∷ cs → length (x ++ R) < suc f → length R < f
-  fuel-rest .(c ∷ cs) c cs R f refl (s≤s lt′) =
-    ≤-trans (s≤s (subst (length R Data.Nat.≤_) (sym (length-++ cs)) (m≤n+m (length R) (length cs)))) lt′
+  -- Starting from `false` is the weakest requirement.
+  weaken : ∀ {p ts} → Run p false ts → ValidTokenSeq ts
+  weaken done           = done
+  weaken (step wf _ r)  = step wf tt r
 
-tokenize-print : ∀ {p ts} → Run p false ts → ∀ fuel →
-                 length (printTokenList ts) < fuel →
-                 tokenizeLoop fuel (printTokenList ts) ≡ just ts
-tokenize-print r zero ()
-tokenize-print done (suc f) _ = refl
-tokenize-print {ts = t ∷ ts} r@(step wf nt rest) (suc f) lt with printToken-cons t wf
-... | c , cs₀ , eq =
-  trans (step-eq (printToken t ++ printTokenList ts) c (cs₀ ++ printTokenList ts)
-                 (cong (_++ printTokenList ts) eq)
-                 (lexToken-printToken t (printTokenList ts) wf (tokenFollow r)))
-        (cong (Maybe.map (t ∷_))
-              (tokenize-print rest f
-                              (fuel-rest (printToken t) c cs₀ (printTokenList ts) f eq lt)))
-  where
-  step-eq : ∀ L c cs → L ≡ c ∷ cs →
-            lexToken L ≡ just (t , printTokenList ts) →
-            tokenizeLoop (suc f) L ≡ Maybe.map (t ∷_) (tokenizeLoop f (printTokenList ts))
-  step-eq .(c ∷ cs) c cs refl lt′ = cong (tokenizeCons f) lt′
+  validSeq? : ∀ ts → Dec (ValidSeq ts)
+  validSeq? ts with validTokenSeq? ts
+  ... | yes r  = yes (false , r)
+  ... | no  ¬r = no (λ { (p , r) → ¬r (weaken r) })
 
-tokenize-printTokenList : ∀ ts → ValidTokenSeq ts →
-                          tokenize (printTokenList ts) ≡ just ts
-tokenize-printTokenList ts v =
-  tokenize-print v (suc (length (printTokenList ts))) (n<1+n (length (printTokenList ts)))
+  run-tail : ∀ {p t ts} → Run p false (t ∷ ts) → ValidSeq ts
+  run-tail (step _ _ r) = _ , r
 
-------------------------------------------------------------------------
--- `lexer`
-------------------------------------------------------------------------
+  run-wf : ∀ {p t ts} → Run p false (t ∷ ts) → tokenWF t ≡ true
+  run-wf (step wf _ _) = wf
 
--- The tokens of a text, or the empty stream when the text does not lex
--- to a valid stream.
-lexValid′ : ∀ ts → Dec (ValidTokenSeq ts) → Σ[ ts′ ∈ List XMLToken ] ValidTokenSeq ts′
-lexValid′ ts (yes v) = ts , v
-lexValid′ ts (no  _) = [] , done
-
-lexValidMaybe : Maybe (List XMLToken) → Σ[ ts ∈ List XMLToken ] ValidTokenSeq ts
-lexValidMaybe nothing   = [] , done
-lexValidMaybe (just ts) = lexValid′ ts (validTokenSeq? ts)
-
-lexValid : List Char → Σ[ ts ∈ List XMLToken ] ValidTokenSeq ts
-lexValid cs = lexValidMaybe (tokenize cs)
-
-private
-  lexValid′-valid : ∀ ts (d : Dec (ValidTokenSeq ts)) → ValidTokenSeq ts →
-                    proj₁ (lexValid′ ts d) ≡ ts
-  lexValid′-valid ts (yes _) _ = refl
-  lexValid′-valid ts (no ¬v) v = ⊥-elim (¬v v)
-
-  lexValid-print : ∀ ts → ValidTokenSeq ts → proj₁ (lexValid (printTokenList ts)) ≡ ts
-  lexValid-print ts v =
-    trans (cong (λ m → proj₁ (lexValidMaybe m)) (tokenize-printTokenList ts v))
-          (lexValid′-valid ts (validTokenSeq? ts) v)
-
--- `lexer`.
-lexer : RightInverse ValidTokens Chars
-lexer = record
-  { to        = λ x → printTokenList (proj₁ x)
-  ; from      = lexValid
-  ; to-cong   = cong (λ x → printTokenList x)
-  ; from-cong = λ { refl → refl }
-  ; inverseʳ  = λ { {x} refl → lexValid-print (proj₁ x) (proj₂ x) }
+xmlLang : TokenLang
+xmlLang = record
+  { Token      = XMLToken
+  ; print      = printToken
+  ; lex        = lexToken
+  ; skip       = λ cs → cs
+  ; skip-nil   = refl
+  ; Valid      = ValidSeq
+  ; valid?     = validSeq?
+  ; valid-nil  = false , done
+  ; valid-tail = λ { (_ , r) → run-tail r }
+  ; print-cons = λ { {t} {ts} (_ , r) → printToken-cons t (run-wf {t = t} {ts = ts} r) }
+  ; skip-print = λ _ → refl
+  ; lex-print  = λ { {t} {ts} (_ , r) → lexToken-printToken t (printTokenList ts) (run-wf {t = t} {ts = ts} r) (tokenFollow r) }
   }
+
+open Lexing xmlLang public
+  using (ValidTokens; tokenize; tokenizeLoop; lexValid; lexer)
+  renaming (tokenize-printList to tokenize-printTokenList)
+
+-- A stream valid from the start is valid.
+valid-run : ∀ {ts} → Run false false ts → ValidSeq ts
+valid-run r = false , r

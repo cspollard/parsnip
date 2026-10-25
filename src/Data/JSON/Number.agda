@@ -34,6 +34,7 @@ open import Relation.Binary.PropositionalEquality as ≡
   using (_≡_; refl; sym; trans; cong; cong₂; module ≡-Reasoning)
 
 open import Data.Invertible.Char using (parseDigit; printDigit; parsePrintDigit)
+open import Data.Number.Digits public
 
 ------------------------------------------------------------------------
 -- Exact representation of JSON numbers according to RFC 8259:
@@ -49,143 +50,6 @@ record JSONNumber : Set where
     exponent : ℤ
 
 ------------------------------------------------------------------------
--- Base-10 Digit Conversion & Round-Trip Properties
-------------------------------------------------------------------------
-
-digitsToNatAcc : ℕ → List (Fin 10) → ℕ
-digitsToNatAcc acc []       = acc
-digitsToNatAcc acc (d ∷ ds) = digitsToNatAcc ((acc * 10) +ℕ (toℕ d)) ds
-
-digitsToNat : List (Fin 10) → ℕ
-digitsToNat = digitsToNatAcc 0
-
-digitsToNatAcc-++ : ∀ acc xs ys → digitsToNatAcc acc (xs ++ ys) ≡ digitsToNatAcc (digitsToNatAcc acc xs) ys
-digitsToNatAcc-++ acc []       ys = refl
-digitsToNatAcc-++ acc (x ∷ xs) ys = digitsToNatAcc-++ ((acc * 10) +ℕ toℕ x) xs ys
-
-digitsToNatAcc-snoc : ∀ acc xs d → digitsToNatAcc acc (xs ++ (d ∷ [])) ≡ (digitsToNatAcc acc xs * 10) +ℕ toℕ d
-digitsToNatAcc-snoc acc xs d = digitsToNatAcc-++ acc xs (d ∷ [])
-
-digitsToNat-reverse : ∀ (ds : List (Fin 10)) → digitsToNat (reverse ds) ≡ fromDigits ds
-digitsToNat-reverse []       = refl
-digitsToNat-reverse (d ∷ ds) = begin
-  digitsToNat (reverse (d ∷ ds))
-    ≡⟨ cong digitsToNat (unfold-reverse d ds) ⟩
-  digitsToNat (reverse ds ++ (d ∷ []))
-    ≡⟨ digitsToNatAcc-snoc 0 (reverse ds) d ⟩
-  (digitsToNat (reverse ds) * 10) +ℕ toℕ d
-    ≡⟨ cong (λ x → (x * 10) +ℕ toℕ d) (digitsToNat-reverse ds) ⟩
-  (fromDigits ds * 10) +ℕ toℕ d
-    ≡⟨ +-comm (fromDigits ds * 10) (toℕ d) ⟩
-  toℕ d +ℕ (fromDigits ds * 10)
-  ∎
-  where open ≡-Reasoning
-
-NonEmptyList : ∀ {A : Set} → List A → Set
-NonEmptyList []      = ⊥
-NonEmptyList (_ ∷ _) = ⊤
-
-nonEmpty-++ : ∀ {A : Set} (xs ys : List A) → NonEmptyList xs → NonEmptyList (xs ++ ys)
-nonEmpty-++ []       _ ()
-nonEmpty-++ (x ∷ xs) _ _ = tt
-
-nonEmpty-reverse : ∀ {A : Set} (xs : List A) → NonEmptyList xs → NonEmptyList (reverse xs)
-nonEmpty-reverse []       ()
-nonEmpty-reverse (x ∷ xs) _ with reverse xs | unfold-reverse x xs
-... | []     | eq rewrite eq = tt
-... | y ∷ ys | eq rewrite eq = tt
-
--- Base-10 digit expansion with non-emptiness packaged in the predicate
-toDigits10 : (n : ℕ) → ∃ λ (ds : Expansion 10) → (fromDigits ds ≡ n) × NonEmptyList ds
-toDigits10 n = <′-rec Pred helper n
-  where
-  Pred : ℕ → Set
-  Pred m = ∃ λ (ds : Expansion 10) → (fromDigits ds ≡ m) × NonEmptyList ds
-
-  lem′ : ∀ x k → (x +ℕ x) +ℕ (k +ℕ (x * k)) ≡ k +ℕ (x * (2 +ℕ k))
-  lem′ x k = begin
-    (x +ℕ x) +ℕ (k +ℕ (x * k))   ≡⟨ sym (+-assoc (x +ℕ x) k (x * k)) ⟩
-    ((x +ℕ x) +ℕ k) +ℕ (x * k)   ≡⟨ cong (_+ℕ (x * k)) (+-comm (x +ℕ x) k) ⟩
-    (k +ℕ (x +ℕ x)) +ℕ (x * k)   ≡⟨ +-assoc k (x +ℕ x) (x * k) ⟩
-    k +ℕ ((x +ℕ x) +ℕ (x * k))   ≡⟨ cong (k +ℕ_) (begin
-      (x +ℕ x) +ℕ (x * k)       ≡⟨ +-assoc x x (x * k) ⟩
-      x +ℕ (x +ℕ (x * k))       ≡⟨ cong (λ z → x +ℕ (z +ℕ (x * k))) (sym (*-identityʳ x)) ⟩
-      x +ℕ ((x * 1) +ℕ (x * k)) ≡⟨ cong₂ _+ℕ_ (sym (*-identityʳ x)) (sym (*-distribˡ-+ x 1 k)) ⟩
-      (x * 1) +ℕ (x * suc k)    ≡⟨ sym (*-distribˡ-+ x 1 (suc k)) ⟩
-      x * (2 +ℕ k)              ∎) ⟩
-    k +ℕ (x * (2 +ℕ k))          ∎
-    where open ≡-Reasoning
-
-  lem : ∀ x r → (2 +ℕ x) ≤′ (r +ℕ ((1 +ℕ x) * 10))
-  lem x r = ≤⇒≤′ $ begin
-    2 +ℕ x                                  ≤⟨ m≤m+n (2 +ℕ x) ((x +ℕ ((1 +ℕ x) * 8)) +ℕ r) ⟩
-    (2 +ℕ x) +ℕ ((x +ℕ ((1 +ℕ x) * 8)) +ℕ r) ≡⟨ cong ((2 +ℕ x) +ℕ_) (+-comm (x +ℕ ((1 +ℕ x) * 8)) r) ⟩
-    (2 +ℕ x) +ℕ (r +ℕ (x +ℕ ((1 +ℕ x) * 8))) ≡⟨ sym (+-assoc (2 +ℕ x) r (x +ℕ ((1 +ℕ x) * 8))) ⟩
-    ((2 +ℕ x) +ℕ r) +ℕ (x +ℕ ((1 +ℕ x) * 8)) ≡⟨ cong (_+ℕ (x +ℕ ((1 +ℕ x) * 8))) (+-comm (2 +ℕ x) r) ⟩
-    (r +ℕ (2 +ℕ x)) +ℕ (x +ℕ ((1 +ℕ x) * 8)) ≡⟨ +-assoc r (2 +ℕ x) (x +ℕ ((1 +ℕ x) * 8)) ⟩
-    r +ℕ ((2 +ℕ x) +ℕ (x +ℕ ((1 +ℕ x) * 8))) ≡⟨ cong (r +ℕ_) (cong (λ z → 2 +ℕ z) (sym (+-assoc x x ((1 +ℕ x) * 8)))) ⟩
-    r +ℕ (2 +ℕ ((x +ℕ x) +ℕ ((1 +ℕ x) * 8))) ≡⟨ cong (λ z → r +ℕ (2 +ℕ z)) (lem′ x 8) ⟩
-    r +ℕ (2 +ℕ (8 +ℕ (x * 10)))              ≡⟨⟩
-    r +ℕ ((1 +ℕ x) * 10)                     ∎
-    where open ≤-Reasoning
-
-  helper : ∀ m → <′-Rec Pred m → Pred m
-  helper m rec with m divMod 10
-  ... | result zero    r eq   = (r ∷ [] , sym eq , tt)
-  ... | result (suc x) r refl =
-    let (ds , eq , _) = rec (lem x (toℕ r))
-    in (r ∷ ds , cong (λ i → toℕ r +ℕ (i * 10)) eq , tt)
-
-natToDigits : ℕ → List (Fin 10)
-natToDigits n = reverse (proj₁ (toDigits10 n))
-
-digitsToNat-natToDigits : ∀ n → digitsToNat (natToDigits n) ≡ n
-digitsToNat-natToDigits n = trans (digitsToNat-reverse (proj₁ (toDigits10 n))) (proj₁ (proj₂ (toDigits10 n)))
-
-natToDigits-nonEmpty : ∀ n → NonEmptyList (natToDigits n)
-natToDigits-nonEmpty n = nonEmpty-reverse (proj₁ (toDigits10 n)) (proj₂ (proj₂ (toDigits10 n)))
-
-------------------------------------------------------------------------
--- Digit Stream Parsing & Printing
-------------------------------------------------------------------------
-
-parseDigitsLoop : List Char → List (Fin 10) × List Char
-parseDigitsLoop []       = ([] , [])
-parseDigitsLoop (c ∷ cs) with parseDigit c
-... | nothing = ([] , c ∷ cs)
-... | just d  with parseDigitsLoop cs
-...   | (ds , rest) = (d ∷ ds , rest)
-
-printDigits : List (Fin 10) → List Char
-printDigits []       = []
-printDigits (d ∷ ds) = printDigit d ∷ printDigits ds
-
-correctDigitsLoop[] : ∀ (ds : List (Fin 10)) →
-  parseDigitsLoop (printDigits ds) ≡ (ds , [])
-correctDigitsLoop[] [] = refl
-correctDigitsLoop[] (d ∷ ds)
-  rewrite parsePrintDigit d
-  rewrite correctDigitsLoop[] ds = refl
-
-correctDigitsLoop : ∀ (ds : List (Fin 10)) (rest : List Char) →
-  (c : Char) → (parseDigit c ≡ nothing) →
-  parseDigitsLoop (printDigits ds ++ (c ∷ rest)) ≡ (ds , c ∷ rest)
-correctDigitsLoop [] rest c noD rewrite noD = refl
-correctDigitsLoop (d ∷ ds) rest c noD
-  rewrite parsePrintDigit d
-  rewrite correctDigitsLoop ds rest c noD = refl
-
-NoLeadingDigit : List Char → Set
-NoLeadingDigit []       = ⊤
-NoLeadingDigit (c ∷ _)  = parseDigit c ≡ nothing
-
-correctDigitsLoopGen : ∀ (ds : List (Fin 10)) (rest : List Char) →
-  NoLeadingDigit rest →
-  parseDigitsLoop (printDigits ds ++ rest) ≡ (ds , rest)
-correctDigitsLoopGen ds []       _   rewrite ++-identityʳ (printDigits ds) = correctDigitsLoop[] ds
-correctDigitsLoopGen ds (c ∷ cs) noD = correctDigitsLoop ds cs c noD
-
-------------------------------------------------------------------------
 -- Number Delimiter Predicates & Formatting
 ------------------------------------------------------------------------
 
@@ -196,12 +60,6 @@ NoLeadingExp (c ∷ _) with c ≟ 'e' | c ≟ 'E'
 ... | no  _ | yes _ = ⊥
 ... | no  _ | no  _ = ⊤
 
-NoLeadingDot : List Char → Set
-NoLeadingDot []        = ⊤
-NoLeadingDot (c ∷ _) with c ≟ '.'
-... | yes _ = ⊥
-... | no  _ = ⊤
-
 NoLeadingNumCont : List Char → Set
 NoLeadingNumCont cs = NoLeadingDigit cs × NoLeadingDot cs × NoLeadingExp cs
 
@@ -209,17 +67,6 @@ signNatToℤ : Sign → ℕ → ℤ
 signNatToℤ + n       = +_ n
 signNatToℤ - zero    = 0ℤ
 signNatToℤ - (suc n) = -[1+ n ]
-
-printSign : Sign → List Char
-printSign + = []
-printSign - = '-' ∷ []
-
-printNat : ℕ → List Char
-printNat n = printDigits (natToDigits n)
-
-printFraction : List (Fin 10) → List Char
-printFraction []       = []
-printFraction (d ∷ ds) = '.' ∷ printDigits (d ∷ ds)
 
 printExponent : ℤ → List Char
 printExponent (+_ zero)    = []
@@ -341,12 +188,6 @@ parseNumber []       = Maybe.map proj₁ (lexNumber + [])
 parseNumber (c ∷ cs) with c ≟ '-'
 ... | yes _ = Maybe.map proj₁ (lexNumber - cs)
 ... | no  _ = Maybe.map proj₁ (lexNumber + (c ∷ cs))
-
--- A printed natural number, followed by anything, starts with a digit.
-printNat-head : ∀ n rest → ∃ λ d → ∃ λ cs → printNat n ++ rest ≡ printDigit d ∷ cs
-printNat-head n rest with natToDigits n | natToDigits-nonEmpty n
-... | []     | ()
-... | d ∷ ds | _ = d , printDigits ds ++ rest , refl
 
 private
   NonMinusHead : List Char → Set

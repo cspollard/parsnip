@@ -26,7 +26,7 @@ import Function.Construct.Composition as Composition
 
 open import Data.XML.AST using (XMLDoc)
 open import Data.XML.Equality using (_≈ₓ_; XMLSetoid)
-open import Data.XML.Lexer using (lexer; tokenize; tokenize-printTokenList)
+open import Data.XML.Lexer using (lexer; tokenize; tokenize-printTokenList; valid-run)
 open import Data.XML.Parser using (parser; parseTokens; parseTokens-printTokens)
 open import Data.XML.Print using (printXML)
 open import Data.Stage using (Chars)
@@ -48,6 +48,6 @@ parseXML-printXML v with parseTokens-printTokens v
 ... | v′ , eq , ≈v =
   v′ ,
   Eq.trans (cong (Maybe.maybe parseTokens nothing)
-                 (tokenize-printTokenList (printTokens v) (printTokens-valid v)))
+                 (tokenize-printTokenList (printTokens v) (valid-run (printTokens-valid v))))
            eq ,
   ≈v

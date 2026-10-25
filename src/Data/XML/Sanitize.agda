@@ -30,48 +30,16 @@ open import Data.Unit using (tt)
 open import Function using (_∘_)
 open import Relation.Binary.PropositionalEquality using (_≡_; refl; cong)
 
+open import Data.Sanitize
 open import Data.XML.Valid
 open import Data.XML.AST
 
 private variable
   A : Set
 
-fromEq : ∀ {b} → b ≡ true → T b
-fromEq refl = tt
-
-both : ∀ {x y} → x ≡ true → y ≡ true → x ∧ y ≡ true
-both refl refl = refl
-
 ------------------------------------------------------------------------
 -- Repairing characters
 ------------------------------------------------------------------------
-
--- `c` if it satisfies `ok`, and the replacement `d` otherwise.
-fixWith : (Char → Bool) → Char → Char → Char
-fixWith ok d c = if ok c then c else d
-
-fixWith-ok : ∀ (ok : Char → Bool) (d : Char) → ok d ≡ true →
-             ∀ (c : Char) → ok (fixWith ok d c) ≡ true
-fixWith-ok ok d hd c = go (ok c) refl
-  where
-  go : ∀ (b : Bool) → ok c ≡ b → ok (if b then c else d) ≡ true
-  go true  eq = eq
-  go false eq = hd
-
-all-map : ∀ (p : Char → Bool) (f : Char → Char) → (∀ c → p (f c) ≡ true) →
-          ∀ (cs : List Char) → all p (map f cs) ≡ true
-all-map p f h []       = refl
-all-map p f h (c ∷ cs) rewrite h c = all-map p f h cs
-
-------------------------------------------------------------------------
--- Text and names
-------------------------------------------------------------------------
-
-fixText : Text → Text
-fixText = map (fixWith isValidChar '\xFFFD')
-
-fixText-valid : ∀ t → isValidText (fixText t) ≡ true
-fixText-valid = all-map isValidChar (fixWith isValidChar '\xFFFD') (fixWith-ok isValidChar '\xFFFD' refl)
 
 fixStart-ok : ∀ c → isNameStart (fixWith isNameStart '_' c) ≡ true
 fixStart-ok = fixWith-ok isNameStart '_' refl
