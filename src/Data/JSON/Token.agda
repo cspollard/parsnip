@@ -24,7 +24,7 @@ open import Data.Fin using (Fin)
 open import Data.Sign using (Sign)
 import Data.Sign as Sign
 open import Function.Bundles using (RightInverse)
-open import Relation.Nullary.Decidable using (yes; no)
+open import Relation.Nullary.Decidable using (Dec; yes; no)
 open import Relation.Binary.PropositionalEquality
   using (_≡_; refl; sym; trans; cong; subst; setoid)
 
@@ -81,19 +81,36 @@ private
   keywordToken (trueK  , rest) = boolT true , rest
   keywordToken (falseK , rest) = boolT false , rest
 
--- Dispatch on the first character; the third argument is `parseDigit c`,
--- passed explicitly so that proofs can rewrite exactly that call.
+-- The structural tokens, by first character.
+punct : Char → Maybe JSONToken
+punct '{' = just lbraceT
+punct '}' = just rbraceT
+punct '[' = just lbracketT
+punct ']' = just rbracketT
+punct ':' = just colonT
+punct ',' = just commaT
+punct _   = nothing
+
+-- Dispatch on the first character.  The decisions (`parseDigit c`,
+-- `punct c`, `c ≟ '-'`, `c ≟ '"'`) are passed explicitly so that proofs
+-- can abstract exactly those calls: a catch-all clause after literal
+-- patterns would not reduce for an unknown character.
 lexToken′ : Char → List Char → Maybe (Fin 10) → Maybe (JSONToken × List Char)
-lexToken′ c   cs (just _) = numberToken Sign.+ (c ∷ cs)
-lexToken′ '{' cs nothing  = just (lbraceT , cs)
-lexToken′ '}' cs nothing  = just (rbraceT , cs)
-lexToken′ '[' cs nothing  = just (lbracketT , cs)
-lexToken′ ']' cs nothing  = just (rbracketT , cs)
-lexToken′ ':' cs nothing  = just (colonT , cs)
-lexToken′ ',' cs nothing  = just (commaT , cs)
-lexToken′ '-' cs nothing  = numberToken Sign.- cs
-lexToken′ '"' cs nothing  = Maybe.map (map₁ stringT) (lexBody cs)
-lexToken′ c   cs nothing  = Maybe.map keywordToken (lexKeyword (c ∷ cs))
+lexPunct  : Char → List Char → Maybe JSONToken → Maybe (JSONToken × List Char)
+lexMinus  : (c : Char) → List Char → Dec (c ≡ '-') → Maybe (JSONToken × List Char)
+lexQuote  : (c : Char) → List Char → Dec (c ≡ '"') → Maybe (JSONToken × List Char)
+
+lexToken′ c cs (just _) = numberToken Sign.+ (c ∷ cs)
+lexToken′ c cs nothing  = lexPunct c cs (punct c)
+
+lexPunct c cs (just t) = just (t , cs)
+lexPunct c cs nothing  = lexMinus c cs (c ≟ '-')
+
+lexMinus c cs (yes _) = numberToken Sign.- cs
+lexMinus c cs (no  _) = lexQuote c cs (c ≟ '"')
+
+lexQuote c cs (yes _) = Maybe.map (map₁ stringT) (lexBody cs)
+lexQuote c cs (no  _) = Maybe.map keywordToken (lexKeyword (c ∷ cs))
 
 lexToken : List Char → Maybe (JSONToken × List Char)
 lexToken []       = nothing

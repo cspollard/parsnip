@@ -27,11 +27,11 @@ open import Data.Char.Fast using (_∈?_)
 open import Data.List.Relation.Unary.Any using (here; there)
 open import Data.List.Relation.Unary.Linked as Linked using (Linked; []; [-]; _∷_)
 open import Data.Maybe as Maybe using (Maybe; just; nothing)
-open import Data.Nat using (ℕ; zero; suc; _<_; _≤_; z<s; s<s; s≤s)
+open import Data.Nat using (ℕ; zero; suc; _<_; _≤_; _≤?_; z≤n; z<s; s<s; s≤s)
 open import Data.Product using (_×_; _,_; proj₁; proj₂; ∃; Σ-syntax)
 open import Data.Unit using (⊤; tt)
 open import Data.List.Properties using (length-++)
-open import Data.Nat.Properties using (≤-trans; m≤n+m; n<1+n)
+open import Data.Nat.Properties using (≤-trans; ≤-refl; ≰⇒>; m≤n+m; n≤1+n; n<1+n)
 open import Function.Bundles using (RightInverse)
 open import Relation.Nullary using (¬_; Dec; yes; no)
 open import Relation.Nullary.Decidable using (False; toWitnessFalse)
@@ -42,6 +42,7 @@ open import Data.JSON.Number
   using (JSONNumber; jsonNumber; NoLeadingNumCont; printNat-head; printFraction; printExponent)
 open import Data.Sign as Sign using ()
 open import Data.JSON.Token
+open import Data.JSON.Progress using (lexToken-progress)
 open import Data.Stage using (Chars; Subtype)
 open import Data.Invertible.Char using (parseDigit; printDigit; parsePrintDigit)
 
@@ -90,6 +91,59 @@ tokenizeCons f (just (t , rest)) = Maybe.map (t ∷_) (tokenizeLoop f rest)
 
 tokenize : List Char → Maybe (List JSONToken)
 tokenize cs = tokenizeLoop (suc (length cs)) cs
+
+------------------------------------------------------------------------
+-- Fuel
+--
+-- `tokenize` gives the loop one unit of fuel per input character (plus
+-- one), which forces the whole input list before lexing starts.  Any
+-- other fuel gives the same answer when it succeeds
+-- (`tokenizeLoop-sound`), so a caller that knows the length without
+-- building the list (a `String`'s) can let the input stream.
+------------------------------------------------------------------------
+
+skipWS-≤ : ∀ cs → length (skipWS cs) ≤ length cs
+skipWS-≤ []       = z≤n
+skipWS-≤ (c ∷ cs) with c ∈? whitespace
+... | yes _ = ≤-trans (skipWS-≤ cs) (n≤1+n _)
+... | no  _ = ≤-refl
+
+-- Fuel never matters once it exceeds the input length.
+tokenizeLoop-fuel : ∀ f g cs → length cs < f → length cs < g → tokenizeLoop f cs ≡ tokenizeLoop g cs
+tokenizeLoop-fuel zero    g       cs ()
+tokenizeLoop-fuel (suc f) zero    cs _ ()
+tokenizeLoop-fuel (suc f) (suc g) cs (s≤s lf) (s≤s lg) = step (skipWS cs) (skipWS-≤ cs)
+  where
+  step : ∀ w → length w ≤ length cs → tokenizeStep f w ≡ tokenizeStep g w
+  step []       _ = refl
+  step (c ∷ w′) w≤ with lexToken (c ∷ w′) in eq
+  ... | nothing           = refl
+  ... | just (t , rest)   =
+    cong (Maybe.map (t ∷_))
+         (tokenizeLoop-fuel f g rest
+            (≤-trans (lexToken-progress (c ∷ w′) t rest eq) (≤-trans w≤ lf))
+            (≤-trans (lexToken-progress (c ∷ w′) t rest eq) (≤-trans w≤ lg)))
+
+-- More fuel keeps a successful result.
+tokenizeLoop-mono : ∀ g h cs ts → g ≤ h → tokenizeLoop g cs ≡ just ts → tokenizeLoop h cs ≡ just ts
+tokenizeLoop-mono zero    h       cs ts _       ()
+tokenizeLoop-mono (suc g) zero    cs ts ()
+tokenizeLoop-mono (suc g) (suc h) cs ts (s≤s g≤h) eq = step (skipWS cs) eq
+  where
+  step : ∀ w → tokenizeStep g w ≡ just ts → tokenizeStep h w ≡ just ts
+  step []       e = e
+  step (c ∷ w′) e with lexToken (c ∷ w′)
+  ... | nothing         = e
+  ... | just (t , rest) with tokenizeLoop g rest in eq′
+  step (c ∷ w′) () | just (t , rest) | nothing
+  step (c ∷ w′) refl | just (t , rest) | just ts′ =
+    cong (Maybe.map (t ∷_)) (tokenizeLoop-mono g h rest ts′ g≤h eq′)
+
+-- Whatever fuel produced a token stream, `tokenize` produces it too.
+tokenizeLoop-sound : ∀ g cs ts → tokenizeLoop g cs ≡ just ts → tokenize cs ≡ just ts
+tokenizeLoop-sound g cs ts eq with suc (length cs) ≤? g
+... | yes le = trans (tokenizeLoop-fuel (suc (length cs)) g cs (s≤s ≤-refl) le) eq
+... | no ¬le = tokenizeLoop-mono g (suc (length cs)) cs ts (≤-trans (n≤1+n g) (≰⇒> ¬le)) eq
 
 ------------------------------------------------------------------------
 -- Valid token streams
