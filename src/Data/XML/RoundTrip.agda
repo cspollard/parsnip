@@ -18,6 +18,7 @@ module Data.XML.RoundTrip where
 
 open import Data.Char using (Char)
 open import Data.List using (List)
+open import Data.String using (String; toList)
 open import Data.Maybe as Maybe using (Maybe; just; nothing)
 open import Data.Product using (∃; _×_; _,_)
 open import Function.Bundles using (RightInverse)
@@ -26,7 +27,7 @@ import Function.Construct.Composition as Composition
 
 open import Data.XML.AST using (XMLDoc)
 open import Data.XML.Equality using (_≈ₓ_; XMLSetoid)
-open import Data.XML.Lexer using (lexer; tokenize; tokenize-printTokenList; valid-run)
+open import Data.XML.Lexer using (lexer; tokenize; tokenize-printTokenList; valid-run; tokenizeString; tokenizeString-sound)
 open import Data.XML.Parser using (parser; parseTokens; parseTokens-printTokens)
 open import Data.XML.Print using (printXML)
 open import Data.Stage using (Chars)
@@ -51,3 +52,16 @@ parseXML-printXML v with parseTokens-printTokens v
                  (tokenize-printTokenList (printTokens v) (valid-run (printTokens-valid v))))
            eq ,
   ≈v
+
+-- The same parser for text in a `String`: it tokenizes without measuring
+-- the input first (`tokenizeString`), so the character list streams.  It
+-- agrees with `parseXML` whenever it succeeds.
+parseXMLString : String → Maybe XMLDoc
+parseXMLString s = Maybe.maybe parseTokens nothing (tokenizeString s)
+
+parseXMLString-sound : ∀ s v → parseXMLString s ≡ just v → parseXML (toList s) ≡ just v
+parseXMLString-sound s v eq = go (tokenizeString s) refl eq
+  where
+  go : ∀ m → m ≡ tokenizeString s → Maybe.maybe parseTokens nothing m ≡ just v → parseXML (toList s) ≡ just v
+  go nothing   _ ()
+  go (just ts) e h = Eq.trans (cong (Maybe.maybe parseTokens nothing) (tokenizeString-sound s ts (Eq.sym e))) h

@@ -35,6 +35,7 @@ open import Data.Maybe as Maybe using (Maybe; just; nothing)
 open import Data.Nat using (ℕ; zero; suc; _<_; _≤_; _≤?_; s≤s)
 open import Data.Nat.Properties using (≤-trans; ≤-refl; ≰⇒>; m≤n+m; n≤1+n; n<1+n)
 open import Data.Product using (_×_; _,_; proj₁; proj₂; ∃; Σ-syntax)
+open import Data.String using (String; toList)
 open import Function.Bundles using (RightInverse)
 open import Relation.Nullary using (Dec; yes; no)
 open import Relation.Binary.PropositionalEquality
@@ -66,6 +67,11 @@ record TokenLang : Set₁ where
     -- the prefix round trip, for a token with the rest of its stream after it
     lex-print  : ∀ {t ts} → Valid (t ∷ ts) →
                  lex (print t ++ concatMap print ts) ≡ just (t , concatMap print ts)
+
+-- The fuel `tokenizeString` gives the loop: more tokens than any input
+-- that fits in memory can hold.
+maxTokens : ℕ
+maxTokens = 1000000000000000000
 
 module Lexing (L : TokenLang) where
   open TokenLang L
@@ -182,6 +188,21 @@ module Lexing (L : TokenLang) where
     tokenizeLoop-sound g cs ts eq with suc (length cs) ≤? g
     ... | yes le = trans (tokenizeLoop-fuel (suc (length cs)) g cs (s≤s ≤-refl) le) eq
     ... | no ¬le = tokenizeLoop-mono g (suc (length cs)) cs ts (≤-trans (n≤1+n g) (≰⇒> ¬le)) eq
+
+    -- Tokenizing with a fixed fuel, so that the input list streams as it
+    -- is produced (by `toList`, say) instead of being measured first.  It
+    -- agrees with `tokenize` whenever it succeeds.
+    tokenizeFast : List Char → Maybe (List Token)
+    tokenizeFast = tokenizeLoop maxTokens
+
+    tokenizeFast-sound : ∀ cs ts → tokenizeFast cs ≡ just ts → tokenize cs ≡ just ts
+    tokenizeFast-sound cs = tokenizeLoop-sound maxTokens cs
+
+    tokenizeString : String → Maybe (List Token)
+    tokenizeString s = tokenizeFast (toList s)
+
+    tokenizeString-sound : ∀ s ts → tokenizeString s ≡ just ts → tokenize (toList s) ≡ just ts
+    tokenizeString-sound s = tokenizeFast-sound (toList s)
 
   ----------------------------------------------------------------------
   -- `lexer`

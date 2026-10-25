@@ -16,6 +16,7 @@ open import Data.Bool using (Bool; true; false; _∧_; not; T)
 open import Data.Bool.Properties using (T?) renaming (_≟_ to _≟ᵇ_)
 open import Data.Char using (Char)
 open import Data.List using (List; []; _∷_; _++_)
+open import Data.Nat.Properties using (≤-refl)
 open import Data.Product using (_×_; _,_; ∃)
 open import Data.Unit using (⊤; tt)
 open import Relation.Nullary using (Dec; yes; no)
@@ -26,6 +27,7 @@ import Data.XML.Token as X
 open import Data.XML.Escape using (escapeText-head)
 open import Data.Lexer using (TokenLang; module Lexing)
 open import Data.HTML.Token
+open import Data.HTML.Progress using (lexToken-progress)
 
 ------------------------------------------------------------------------
 -- Valid token streams
@@ -131,6 +133,9 @@ htmlLang = record
 open Lexing htmlLang public
   using (ValidTokens; tokenize; tokenizeLoop; lexValid; lexer)
   renaming (tokenize-printList to tokenize-printTokenList)
+
+open Lexing.Fuel htmlLang (λ _ → ≤-refl) lexToken-progress public
+  using (tokenizeLoop-fuel; tokenizeLoop-mono; tokenizeLoop-sound; tokenizeFast; tokenizeFast-sound; tokenizeString; tokenizeString-sound)
 
 -- A stream valid from the start is valid.
 valid-run : ∀ {ts} → Run false false ts → ValidSeq ts

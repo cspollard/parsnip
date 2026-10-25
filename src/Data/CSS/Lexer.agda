@@ -19,12 +19,14 @@ open import Data.Char using (Char)
 open import Data.List using (List; []; _∷_; _++_; concatMap)
 open import Data.Maybe using (just)
 open import Data.Product using (_,_; proj₁; proj₂)
+open import Data.Nat.Properties using (≤-refl)
 open import Relation.Binary.PropositionalEquality using (_≡_; refl)
 
 open import Data.XML.Valid using (∧-split)
 open import Data.Lexer
 open import Data.CSS.Valid
 open import Data.CSS.Token
+open import Data.CSS.Progress using (lexToken-progress)
 
 ------------------------------------------------------------------------
 -- Valid token streams
@@ -83,3 +85,8 @@ cssLang = record
   }
 
 open Lexing cssLang public
+
+-- Fuel: nothing is skipped and every token consumes input, so any fuel
+-- beyond the input length gives the same result as `tokenize`.
+open Lexing.Fuel cssLang (λ _ → ≤-refl) lexToken-progress public
+  using (tokenizeLoop-fuel; tokenizeLoop-mono; tokenizeLoop-sound; tokenizeFast; tokenizeFast-sound; tokenizeString; tokenizeString-sound)

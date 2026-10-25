@@ -176,4 +176,4 @@ open Lexing jsonLang public
   renaming (tokenize-printList to tokenize-printTokenList)
 
 open Lexing.Fuel jsonLang skipWS-≤ lexToken-progress public
-  using (tokenizeLoop-fuel; tokenizeLoop-mono; tokenizeLoop-sound)
+  using (tokenizeLoop-fuel; tokenizeLoop-mono; tokenizeLoop-sound; tokenizeFast; tokenizeFast-sound; tokenizeString; tokenizeString-sound)

@@ -28,7 +28,7 @@ import Function.Construct.Composition as Composition
 
 open import Data.JSON.AST using (JSON)
 open import Data.JSON.Equality using (_≈ⱼ_; JSONSetoid)
-open import Data.JSON.Lexer using (lexer; tokenize; tokenize-printTokenList; tokenizeLoop; tokenizeLoop-sound)
+open import Data.JSON.Lexer using (lexer; tokenize; tokenize-printTokenList; tokenizeString; tokenizeString-sound)
 open import Data.JSON.Parser using (parser; parseTokens; parseTokens-printTokens)
 open import Data.JSON.Print using (printJSON)
 open import Data.Stage using (Chars)
@@ -56,26 +56,24 @@ parseJSON-printJSON v with parseTokens-printTokens v
   ≈v
   where module Eq = Relation.Binary.PropositionalEquality
 
--- The same parser for text in a `String`, with a fixed fuel (`maxTokens`)
--- instead of `length` of the character list: `tokenize` computes the
--- length first, forcing the whole list into memory before lexing starts,
--- while this lets the list be consumed as `toList` produces it.  It
--- agrees with `parseJSON` whenever it succeeds (`parseJSONString-sound`);
--- it can only fail where `parseJSON` would not if there were more than
--- `maxTokens` tokens, which no input that fits in memory has.
-maxTokens : ℕ
-maxTokens = 1000000000000000000
-
+-- The same parser for text in a `String`: `tokenizeString` gives the
+-- tokenizer a fixed fuel (`Data.Lexer.maxTokens`) instead of the `length`
+-- of the character list, which would force the whole list into memory
+-- before lexing starts; this lets the list be consumed as `toList`
+-- produces it.  It agrees with `parseJSON` whenever it succeeds
+-- (`parseJSONString-sound`); it can only fail where `parseJSON` would not
+-- if there were more than `maxTokens` tokens, which no input that fits in
+-- memory has.
 parseTokenized : Maybe (List JSONToken) → Maybe JSON
 parseTokenized = Maybe.maybe parseTokens nothing
 
 parseJSONString : String → Maybe JSON
-parseJSONString s = parseTokenized (tokenizeLoop maxTokens (toList s))
+parseJSONString s = parseTokenized (tokenizeString s)
 
 parseJSONString-sound : ∀ s v → parseJSONString s ≡ just v → parseJSON (toList s) ≡ just v
-parseJSONString-sound s v eq = go (tokenizeLoop maxTokens (toList s)) refl eq
+parseJSONString-sound s v eq = go (tokenizeString s) refl eq
   where
   module Eq = Relation.Binary.PropositionalEquality
-  go : ∀ m → m ≡ tokenizeLoop maxTokens (toList s) → parseTokenized m ≡ just v → parseJSON (toList s) ≡ just v
+  go : ∀ m → m ≡ tokenizeString s → parseTokenized m ≡ just v → parseJSON (toList s) ≡ just v
   go nothing  _  ()
-  go (just ts) e h = Eq.trans (cong parseTokenized (tokenizeLoop-sound _ (toList s) ts (Eq.sym e))) h
+  go (just ts) e h = Eq.trans (cong parseTokenized (tokenizeString-sound s ts (Eq.sym e))) h

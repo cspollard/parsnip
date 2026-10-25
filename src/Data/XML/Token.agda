@@ -117,37 +117,67 @@ lexName′ c cs false = [] , c ∷ cs
 lexAttr : List Char → Maybe (Attribute × List Char)
 lexAttr₁ : Name × List Char → Maybe (Attribute × List Char)
 lexAttr₂ : Name → Maybe (Text × List Char) → Maybe (Attribute × List Char)
+lexAttr₃ : Name → (c d : Char) → List Char → Dec (c ≡ '=') → Dec (d ≡ '"') →
+           Maybe (Attribute × List Char)
+lexAttr₄ : Name → Text → (e : Char) → List Char → Dec (e ≡ '"') → Maybe (Attribute × List Char)
 
 lexAttr cs = lexAttr₁ (lexName cs)
 
-lexAttr₁ (k@(_ ∷ _) , '=' ∷ '"' ∷ cs) = lexAttr₂ k (lexBody '"' cs)
-lexAttr₁ _                             = nothing
+lexAttr₁ (k@(_ ∷ _) , c ∷ d ∷ cs) = lexAttr₃ k c d cs (c ≟ '=') (d ≟ '"')
+lexAttr₁ _                         = nothing
 
-lexAttr₂ k (just (v , '"' ∷ rest)) = just ((k , v) , rest)
-lexAttr₂ k _                       = nothing
+-- (The character tests are arguments so that proofs about a generic
+-- character can abstract them.)
+lexAttr₃ k c d cs (yes _) (yes _) = lexAttr₂ k (lexBody '"' cs)
+lexAttr₃ k c d cs _       _       = nothing
+
+lexAttr₂ k (just (v , e ∷ rest)) = lexAttr₄ k v e rest (e ≟ '"')
+lexAttr₂ k _                     = nothing
+
+lexAttr₄ k v e rest (yes _) = just ((k , v) , rest)
+lexAttr₄ k v e rest (no  _) = nothing
 
 consAttr : Attribute → Attributes × Bool × List Char → Attributes × Bool × List Char
 consAttr a (as , b , r) = a ∷ as , b , r
 
+-- The ending of a start tag, from its first character: `>`, or `/>`.
+lexAttrsEnd  : (c : Char) → List Char → Dec (c ≡ '>') → Maybe (Attributes × Bool × List Char)
+lexAttrsEnd₁ : (c : Char) → List Char → Dec (c ≡ '/') → Maybe (Attributes × Bool × List Char)
+lexAttrsEnd₂ : List Char → Maybe (Attributes × Bool × List Char)
+lexAttrsEnd₃ : (d : Char) → List Char → Dec (d ≡ '>') → Maybe (Attributes × Bool × List Char)
+
+lexAttrsEnd c cs (yes _) = just ([] , false , cs)
+lexAttrsEnd c cs (no  _) = lexAttrsEnd₁ c cs (c ≟ '/')
+
+lexAttrsEnd₁ c cs (yes _) = lexAttrsEnd₂ cs
+lexAttrsEnd₁ c cs (no  _) = nothing
+
+lexAttrsEnd₂ []       = nothing
+lexAttrsEnd₂ (d ∷ cs) = lexAttrsEnd₃ d cs (d ≟ '>')
+
+lexAttrsEnd₃ d cs (yes _) = just ([] , true , cs)
+lexAttrsEnd₃ d cs (no  _) = nothing
+
 -- The attributes of a start tag, up to and including its ending
 -- (`false` for `>`, `true` for `/>`).  The first argument is fuel: each
--- attribute consumes at least one character.
+-- attribute consumes at least one character.  The fuel is a list (the
+-- input itself, in `lexOpen₁`), consumed one element per attribute, so
+-- it costs nothing to build: a numeric fuel `length rest` would walk the
+-- whole remaining input for every start tag.
 mutual
-  lexAttrs : ℕ → List Char → Maybe (Attributes × Bool × List Char)
-  lexAttrs zero    _  = nothing
-  lexAttrs (suc f) cs = lexAttrs₁ f (skipWS cs)
+  lexAttrs : List Char → List Char → Maybe (Attributes × Bool × List Char)
+  lexAttrs []      _  = nothing
+  lexAttrs (_ ∷ f) cs = lexAttrs₁ f (skipWS cs)
 
-  lexAttrs₁ : ℕ → List Char → Maybe (Attributes × Bool × List Char)
+  lexAttrs₁ : List Char → List Char → Maybe (Attributes × Bool × List Char)
   lexAttrs₁ f []       = nothing
   lexAttrs₁ f (c ∷ cs) = lexAttrs₃ f c cs (isNameChar c)
 
-  lexAttrs₃ : ℕ → Char → List Char → Bool → Maybe (Attributes × Bool × List Char)
+  lexAttrs₃ : List Char → Char → List Char → Bool → Maybe (Attributes × Bool × List Char)
   lexAttrs₃ f c   cs        true  = lexAttrs₂ f (lexAttr (c ∷ cs))
-  lexAttrs₃ f '>' cs        false = just ([] , false , cs)
-  lexAttrs₃ f '/' ('>' ∷ cs) false = just ([] , true , cs)
-  lexAttrs₃ f _   _         false = nothing
+  lexAttrs₃ f c   cs        false = lexAttrsEnd c cs (c ≟ '>')
 
-  lexAttrs₂ : ℕ → Maybe (Attribute × List Char) → Maybe (Attributes × Bool × List Char)
+  lexAttrs₂ : List Char → Maybe (Attribute × List Char) → Maybe (Attributes × Bool × List Char)
   lexAttrs₂ f nothing         = nothing
   lexAttrs₂ f (just (a , cs)) = Maybe.map (consAttr a) (lexAttrs f cs)
 
@@ -159,7 +189,7 @@ lexOpen₂ : Name → Maybe (Attributes × Bool × List Char) → Maybe (XMLToke
 lexOpen cs = lexOpen₁ (lexName cs)
 
 lexOpen₁ ([]          , _)    = nothing
-lexOpen₁ (n@(_ ∷ _)   , rest) = lexOpen₂ n (lexAttrs (suc (length rest)) rest)
+lexOpen₁ (n@(_ ∷ _)   , rest) = lexOpen₂ n (lexAttrs (' ' ∷ rest) rest)
 
 lexOpen₂ n nothing                 = nothing
 lexOpen₂ n (just (as , b , rest))  = just (startT b n as , rest)
@@ -167,22 +197,29 @@ lexOpen₂ n (just (as , b , rest))  = just (startT b n as , rest)
 -- An end tag, after the `</`.
 lexClose : List Char → Maybe (XMLToken × List Char)
 lexClose₁ : Name × List Char → Maybe (XMLToken × List Char)
+lexClose₂ : Name → (d : Char) → List Char → Dec (d ≡ '>') → Maybe (XMLToken × List Char)
 
 lexClose cs = lexClose₁ (lexName cs)
 
-lexClose₁ (n@(_ ∷ _) , '>' ∷ rest) = just (closeT n , rest)
-lexClose₁ _                        = nothing
+lexClose₁ (n@(_ ∷ _) , d ∷ rest) = lexClose₂ n d rest (d ≟ '>')
+lexClose₁ _                      = nothing
+
+lexClose₂ n d rest (yes _) = just (closeT n , rest)
+lexClose₂ n d rest (no  _) = nothing
 
 -- A tag, after the `<`.
 lexTag : List Char → Maybe (XMLToken × List Char)
 lexTag′ : Char → List Char → Bool → Maybe (XMLToken × List Char)
+lexTag″ : (c : Char) → List Char → Dec (c ≡ '/') → Maybe (XMLToken × List Char)
 
 lexTag []       = nothing
 lexTag (c ∷ cs) = lexTag′ c cs (isNameChar c)
 
-lexTag′ c   cs true  = lexOpen (c ∷ cs)
-lexTag′ '/' cs false = lexClose cs
-lexTag′ _   _  false = nothing
+lexTag′ c cs true  = lexOpen (c ∷ cs)
+lexTag′ c cs false = lexTag″ c cs (c ≟ '/')
+
+lexTag″ c cs (yes _) = lexClose cs
+lexTag″ c cs (no  _) = nothing
 
 -- Character data, up to (not including) the next `<`.
 lexText : List Char → Maybe (XMLToken × List Char)
@@ -246,15 +283,15 @@ fuel-step p P R f (s≤s lt) =
 
 -- The attributes of a start tag and its ending are read back.
 lexAttrs-print : ∀ as b rest f → attrNamesValid as ≡ true →
-  length (printAttributes as ++ closer b ++ rest) < f →
+  length (printAttributes as ++ closer b ++ rest) < length f →
   lexAttrs f (printAttributes as ++ closer b ++ rest) ≡ just (as , b , rest)
-lexAttrs-print as b rest zero _ ()
-lexAttrs-print [] false rest (suc g) _ _ = refl
-lexAttrs-print [] true  rest (suc g) _ _ = refl
-lexAttrs-print ((k , v) ∷ as) b rest (suc g) nv lt with ∧-split nv
+lexAttrs-print as b rest [] _ ()
+lexAttrs-print [] false rest (_ ∷ g) _ _ = refl
+lexAttrs-print [] true  rest (_ ∷ g) _ _ = refl
+lexAttrs-print ((k , v) ∷ as) b rest (h ∷ g) nv lt with ∧-split nv
 ... | hk , has with validName-chars k hk
 ... | c , k′ , refl , hc , hk′ =
-  subst (λ l → lexAttrs (suc g) l ≡ just ((((c ∷ k′) , v) ∷ as) , b , rest))
+  subst (λ l → lexAttrs (h ∷ g) l ≡ just ((((c ∷ k′) , v) ∷ as) , b , rest))
         (sym eqI) main
   where
   R : List Char
@@ -265,15 +302,15 @@ lexAttrs-print ((k , v) ∷ as) b rest (suc g) nv lt with ∧-split nv
   eqI = trans (++-assoc (printAttribute ((c ∷ k′) , v)) (printAttributes as) (closer b ++ rest))
               (printAttribute-++ (c ∷ k′) v R)
 
-  lt′ : length R < g
-  lt′ = fuel-step ' ' ((c ∷ k′) ++ '=' ∷ '"' ∷ escapeValue v ++ '"' ∷ []) R g
-          (subst (λ l → length l < suc g)
+  lt′ : length R < length g
+  lt′ = fuel-step ' ' ((c ∷ k′) ++ '=' ∷ '"' ∷ escapeValue v ++ '"' ∷ []) R (length g)
+          (subst (λ l → length l < suc (length g))
                  (++-assoc (printAttribute ((c ∷ k′) , v)) (printAttributes as) (closer b ++ rest)) lt)
 
   nc : NameChars (c ∷ k′)
   nc = ∧-join hc hk′
 
-  main : lexAttrs (suc g) (' ' ∷ (c ∷ k′) ++ '=' ∷ '"' ∷ escapeValue v ++ '"' ∷ R)
+  main : lexAttrs (h ∷ g) (' ' ∷ (c ∷ k′) ++ '=' ∷ '"' ∷ escapeValue v ++ '"' ∷ R)
          ≡ just ((((c ∷ k′) , v) ∷ as) , b , rest)
   main =
     trans (cong (lexAttrs₁ g) (skipWS-nonWS c _ (nonWS-name c hc)))
@@ -294,7 +331,7 @@ lexTag-start b n as rest hn ha with validName-chars n hn
 ... | c , n′ , refl , hc , hn′ =
   trans (cong (lexTag′ c (n′ ++ R)) hc)
   (trans (cong lexOpen₁ (lexName-span (c ∷ n′) R (∧-join hc hn′) (stop-printAttributes as b rest)))
-         (cong (lexOpen₂ (c ∷ n′)) (lexAttrs-print as b rest (suc (length R)) ha (n<1+n (length R)))))
+         (cong (lexOpen₂ (c ∷ n′)) (lexAttrs-print as b rest (' ' ∷ R) ha (n<1+n (length R)))))
   where
   R : List Char
   R = printAttributes as ++ closer b ++ rest

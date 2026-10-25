@@ -212,9 +212,23 @@ lexAt c cs = lexAt₁ c cs (startsIdent cs)
 
 -- A comment, after the `/*`: up to and including the first `*/`.
 lexComment : List Char → Maybe (CToken × List Char)
-lexComment []                = nothing
-lexComment ('*' ∷ '/' ∷ cs)  = just (commentT , cs)
-lexComment (_ ∷ cs)          = lexComment cs
+lexComment₁ : List Char → Bool → Maybe (CToken × List Char)
+lexComment₂ : List Char → Maybe (CToken × List Char)
+lexComment₃ : List Char → Bool → Maybe (CToken × List Char)
+
+lexComment []       = nothing
+lexComment (c ∷ cs) = lexComment₁ cs ⌊ c ≟ '*' ⌋
+
+-- After a `*`: a `/` ends the comment.
+lexComment₁ cs false = lexComment cs
+lexComment₁ cs true  = lexComment₂ cs
+
+lexComment₂ []           = nothing
+lexComment₂ cs@(d ∷ ds)  = lexComment₃ cs ⌊ d ≟ '/' ⌋
+
+lexComment₃ (d ∷ ds) true  = just (commentT , ds)
+lexComment₃ []       true  = nothing
+lexComment₃ cs       false = lexComment cs
 
 -- A `/` is a delimiter, unless a `*` follows.
 lexSlash₁ : Bool → Char → List Char → Maybe (CToken × List Char)

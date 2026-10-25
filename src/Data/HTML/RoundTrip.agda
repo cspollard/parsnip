@@ -24,7 +24,7 @@ open import Data.List using (List; []; _∷_; _++_)
 open import Data.Maybe as Maybe using (Maybe; just; nothing; fromMaybe)
 open import Data.Nat.Properties using (≡⇒≡ᵇ)
 open import Data.Product using (_,_; proj₁)
-open import Data.String using (toList)
+open import Data.String using (String; toList)
 open import Function.Bundles using (RightInverse)
 open import Relation.Binary.PropositionalEquality as Eq using (_≡_; refl; cong; setoid)
 import Function.Construct.Composition as Composition
@@ -33,7 +33,7 @@ open import Data.Char.Class using (is)
 open import Data.Stage using (Chars)
 open import Data.HTML.Valid using (toEq)
 open import Data.HTML.AST
-open import Data.HTML.Lexer using (ValidTokens; lexer; tokenize; tokenize-printTokenList; valid-run)
+open import Data.HTML.Lexer using (ValidTokens; lexer; tokenize; tokenize-printTokenList; valid-run; tokenizeFast; tokenizeFast-sound)
 open import Data.HTML.Parser using (parseTokens; parseTokens-tokensElem)
 open import Data.HTML.Print
 open import Data.HTML.Tokens using (tokensElem; elem-run)
@@ -102,3 +102,32 @@ parseHTML-printHTML : ∀ e → parseHTML (printHTML e) ≡ just e
 parseHTML-printHTML e =
   Eq.trans (cong (Maybe.maybe parseBody nothing) (stripPrefix-++ doctype (printBody e)))
            (parseBody-printBody e)
+
+------------------------------------------------------------------------
+-- Streaming
+--
+-- The same parsers with `tokenizeFast`, which gives the tokenizer a
+-- fixed fuel instead of the `length` of the character list, so that the
+-- list streams as `toList` produces it.  Each agrees with its
+-- counterpart whenever it succeeds.
+------------------------------------------------------------------------
+
+parseBodyFast : List Char → Maybe Elem
+parseBodyFast cs = Maybe.maybe parseTokens nothing (tokenizeFast cs)
+
+parseBodyFast-sound : ∀ cs e → parseBodyFast cs ≡ just e → parseBody cs ≡ just e
+parseBodyFast-sound cs e eq = go (tokenizeFast cs) refl eq
+  where
+  go : ∀ m → m ≡ tokenizeFast cs → Maybe.maybe parseTokens nothing m ≡ just e → parseBody cs ≡ just e
+  go nothing   _ ()
+  go (just ts) q h = Eq.trans (cong (Maybe.maybe parseTokens nothing) (tokenizeFast-sound cs ts (Eq.sym q))) h
+
+parseHTMLString : String → Maybe Elem
+parseHTMLString s = Maybe.maybe parseBodyFast nothing (stripPrefix doctype (toList s))
+
+parseHTMLString-sound : ∀ s e → parseHTMLString s ≡ just e → parseHTML (toList s) ≡ just e
+parseHTMLString-sound s e eq = go (stripPrefix doctype (toList s)) eq
+  where
+  go : ∀ m → Maybe.maybe parseBodyFast nothing m ≡ just e → Maybe.maybe parseBody nothing m ≡ just e
+  go nothing   ()
+  go (just cs) h = parseBodyFast-sound cs e h

@@ -30,7 +30,7 @@ open import Data.Empty using (⊥; ⊥-elim)
 open import Data.List using (List; []; _∷_; _++_; length)
 open import Data.Maybe as Maybe using (Maybe; just; nothing)
 open import Data.Nat using (ℕ; zero; suc; _<_; s≤s)
-open import Data.Nat.Properties using (≤-trans; m≤n+m; n<1+n)
+open import Data.Nat.Properties using (≤-refl; ≤-trans; m≤n+m; n<1+n)
 open import Data.List.Properties using (length-++)
 open import Data.Product using (_×_; _,_; proj₁; proj₂; ∃; Σ-syntax)
 open import Data.Unit using (⊤; tt)
@@ -42,6 +42,7 @@ open import Relation.Binary.PropositionalEquality
 open import Data.XML.Escape using (escapeText-head)
 open import Data.Lexer using (TokenLang; module Lexing)
 open import Data.XML.Token
+open import Data.XML.Progress using (lexToken-progress)
 open import Data.Stage using (Chars; Subtype)
 
 ------------------------------------------------------------------------
@@ -153,6 +154,9 @@ xmlLang = record
 open Lexing xmlLang public
   using (ValidTokens; tokenize; tokenizeLoop; lexValid; lexer)
   renaming (tokenize-printList to tokenize-printTokenList)
+
+open Lexing.Fuel xmlLang (λ _ → ≤-refl) lexToken-progress public
+  using (tokenizeLoop-fuel; tokenizeLoop-mono; tokenizeLoop-sound; tokenizeFast; tokenizeFast-sound; tokenizeString; tokenizeString-sound)
 
 -- A stream valid from the start is valid.
 valid-run : ∀ {ts} → Run false false ts → ValidSeq ts

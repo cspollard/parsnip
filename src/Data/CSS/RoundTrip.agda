@@ -18,16 +18,20 @@
 module Data.CSS.RoundTrip where
 
 open import Data.Char using (Char)
+open import Data.String using (String; toList)
+open import Data.Nat using (ℕ)
 open import Data.List using (List; [])
 open import Data.Maybe as Maybe using (Maybe; just; nothing; fromMaybe)
 open import Data.Product using (_,_; proj₁)
 open import Function.Bundles using (RightInverse)
 open import Relation.Binary.PropositionalEquality as Eq using (_≡_; refl; cong; setoid)
 import Function.Construct.Composition as Composition
+open import Relation.Binary.PropositionalEquality using (sym)
 
 open import Data.Stage using (Chars)
 open import Data.CSS.AST using (CSS)
-open import Data.CSS.Lexer using (ValidTokens; lexer; tokenize; tokenize-printList)
+open import Data.CSS.Lexer using (ValidTokens; lexer; tokenize; tokenize-printList; tokenizeString; tokenizeString-sound)
+open import Data.CSS.Token using (CToken)
 open import Data.CSS.Parser using (parseCSS; parseCSS-printTokens)
 open import Data.CSS.Print using (printCSS)
 open import Data.CSS.Tokens using (printTokens; printTokens-valid)
@@ -64,3 +68,21 @@ parseCSSText-printCSS v =
   Eq.trans (cong (Maybe.maybe parseCSS nothing)
                  (tokenize-printList (printTokens v) (printTokens-valid v)))
            (parseCSS-printTokens v)
+
+-- The same parser for text in a `String`: `tokenizeString` gives the
+-- tokenizer a fixed fuel instead of the `length` of the character list,
+-- so the list can be consumed as `toList` produces it (see
+-- `Data.JSON.RoundTrip.parseJSONString`).  It agrees with `parseCSSText`
+-- whenever it succeeds.
+parseTokenized : Maybe (List CToken) → Maybe CSS
+parseTokenized = Maybe.maybe parseCSS nothing
+
+parseCSSString : String → Maybe CSS
+parseCSSString s = parseTokenized (tokenizeString s)
+
+parseCSSString-sound : ∀ s v → parseCSSString s ≡ just v → parseCSSText (toList s) ≡ just v
+parseCSSString-sound s v eq = go (tokenizeString s) refl eq
+  where
+  go : ∀ m → m ≡ tokenizeString s → parseTokenized m ≡ just v → parseCSSText (toList s) ≡ just v
+  go nothing   _ ()
+  go (just ts) e h = Eq.trans (cong parseTokenized (tokenizeString-sound s ts (sym e))) h
