@@ -55,7 +55,7 @@ and CSS section are *not yet updated* to match what was built.
 
 ## Next steps (all optional)
 
-1. `Data.CSS.Selector` and `Data.CSS.Style` (typed properties).
+1. Done: `Data.CSS.Selector` and `Data.CSS.Style`. Remaining: specificity, matching, more typed values.
 2. `Data.HTML.Style` is done for `<style>` elements (partial); `style=` attribute ↔ declarations remains.
 3. HTML: named entities, lenient normalizer, `SpecStable`.
 

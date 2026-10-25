@@ -53,8 +53,15 @@ continuation in strings, XML-legal characters only; single-quoted strings
 are read but printed with double quotes; `!important` is part of a
 declaration's value.
 
-**Not done:** `Data.CSS.Selector` (typed selectors with a round trip over
-component values) and `Data.CSS.Style` (typed properties); error recovery.
+`Selector` (selector lists over component values:
+type/universal, class, id, attribute, pseudo-class/element, functional
+pseudo with raw arguments, four combinators; strict canonical form with no
+white space around `>`, `+`, `~`, `,`; `parseSelectorList-print`) and `Style`
+(`selectorRule`, with the prelude evidence proved for every selector, and
+a few typed declarations: `color`, `display`, `margin`, …).
+
+**Not done:** error recovery; selector specificity; typed values beyond
+keywords and pixel lengths.
 
 ## HTML (done)
 
@@ -97,6 +104,6 @@ printed CSS may contain `</`.)
 
 ## Possible next steps
 
-1. `Data.CSS.Selector` / `Data.CSS.Style`.
+1. Selector specificity and matching against `Data.HTML.AST`.
 2. Make `styleElement` total by printing a comment between `<` and `/`.
 3. Named entities, a lenient normalizer, `SpecStable`.

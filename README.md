@@ -9,7 +9,8 @@ parsers, and stdlib `RightInverse` stages (`Data.Stage`).
 - `Data.XML.*` — AST, escaping, tokens, lexer, parser, `Data.XML.RoundTrip.xmlStage`
 - `Data.CSS.*` — component-value syntax (tokens, lexer, parser,
   `Data.CSS.RoundTrip.cssStage`), rules (`Data.CSS.Rule`), declaration lists
-  (`Data.CSS.Declaration`), `Data.CSS.Stylesheet`, total constructors
+  (`Data.CSS.Declaration`), selectors (`Data.CSS.Selector`), typed
+  vocabulary (`Data.CSS.Style`), `Data.CSS.Stylesheet`, total constructors
   (`Data.CSS.Sanitize`), `Data.CSS.Examples`
 - `Data.HTML.*` — AST (void / raw-text / mixed-content elements), tokens,
   lexer, parser, `Data.HTML.RoundTrip.htmlStage`, total constructors

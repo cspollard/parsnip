@@ -51,3 +51,37 @@ numbers : tokenize (toList ".5 +3px -2")
          ∷ numberT (cssNumber Sign.- 2 [])
          ∷ [] )
 numbers = refl
+
+------------------------------------------------------------------------
+-- Selectors: `a.x>b:hover, *` from text
+------------------------------------------------------------------------
+
+open import Data.Product using (_×_; _,_)
+open import Data.CSS.Selector
+open import Data.CSS.RoundTrip using (parseCSSText)
+
+sel : SelectorList
+sel = ( withHead (typeH (toList "a") _) (classS (toList "x") _ ∷ [])
+      , (child , withHead (typeH (toList "b") _) (pseudoC (toList "hover") _ ∷ [])) ∷ [] )
+    , (withHead universalH [] , []) ∷ []
+
+selectors : parseCSSText (toList "a.x>b:hover,*") ≡ just (printSelectorList sel)
+selectors = refl
+
+selectors′ : parseSelectorList (printSelectorList sel) ≡ just sel
+selectors′ = parseSelectorList-print sel
+
+------------------------------------------------------------------------
+-- A rule from a selector and typed declarations
+------------------------------------------------------------------------
+
+open import Data.CSS.Style using (selectorRule; color; margin)
+
+styled : List Rule
+styled = selectorRule sel (printDecls (color "red" ∷ margin 4 ∷ [])) ∷ []
+
+styled-printed : printStylesheet styled ≡ toList "a.x>b:hover,*{color:red;margin:4px;}"
+styled-printed = refl
+
+styled-read : parseStylesheet (toList "a.x>b:hover,*{color:red;margin:4px;}") ≡ just styled
+styled-read = refl
