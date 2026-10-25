@@ -27,7 +27,7 @@ module Data.XML.Escape where
 
 open import Data.Bool using (Bool; true; false; if_then_else_)
 open import Data.Char using (Char; fromℕ)
-open import Data.Char.Properties using (_≟_)
+open import Data.Char.Fast using (_≟_)
 open import Data.Nat using (ℕ; _<ᵇ_)
 open import Data.Nat.Show using (readMaybe)
 open import Data.String using (String; toList; fromList)

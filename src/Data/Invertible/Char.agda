@@ -4,7 +4,7 @@ module Data.Invertible.Char where
 
 open import Level using (0ℓ)
 open import Data.Char using (Char)
-open import Data.Char.Properties using (_≟_)
+open import Data.Char.Fast using (_≟_)
 open import Data.List using (List; []; _∷_; _++_)
 open import Data.Fin using (Fin; zero; suc)
 open import Data.Fin.Patterns using (0F; 1F; 2F; 3F; 4F; 5F; 6F; 7F; 8F; 9F)

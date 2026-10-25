@@ -14,7 +14,7 @@ module Data.JSON.Token where
 
 open import Data.Bool using (Bool; true; false)
 open import Data.Char using (Char)
-open import Data.Char.Properties using (_≟_)
+open import Data.Char.Fast using (_≟_)
 open import Data.List using (List; []; _∷_; _++_)
 open import Data.List.Properties using (++-assoc; ++-identityʳ)
 open import Data.Maybe as Maybe using (Maybe; just; nothing)

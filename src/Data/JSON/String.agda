@@ -16,7 +16,7 @@ module Data.JSON.String where
 
 open import Data.Bool using (true; false)
 open import Data.Char using (Char)
-open import Data.Char.Properties using (_≟_)
+open import Data.Char.Fast using (_≟_)
 open import Data.List using (List; []; _∷_; _++_; concatMap)
 open import Data.List.Properties using (++-assoc)
 open import Data.List.Relation.Unary.All as All using (All; []; _∷_)
