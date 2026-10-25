@@ -31,7 +31,7 @@ module Data.CSS.Token where
 open import Data.Bool using (Bool; true; false; _∧_; _∨_; not; T)
 open import Data.Bool.ListAction using (all)
 open import Data.Char using (Char)
-open import Data.Char.Properties using (_≟_)
+open import Data.Char.Fast using (_≟_)
 open import Data.Empty using (⊥; ⊥-elim)
 open import Data.List using (List; []; _∷_; _++_)
 open import Data.List.Properties using (++-assoc; ++-identityʳ)
@@ -47,7 +47,7 @@ open import Relation.Binary.PropositionalEquality
 open import Data.List.Membership.Propositional using (_∈_)
 open import Data.List.Relation.Unary.All as All using (All; []; _∷_)
 open import Data.List.Relation.Unary.Any using (here; there)
-open import Data.List.Membership.DecPropositional _≟_ using (_∈?_)
+open import Data.Char.Fast using (_∈?_)
 open import Relation.Nullary.Decidable using (⌊_⌋)
 
 open import Data.Invertible.Char using (parseDigit; printDigit; parsePrintDigit)

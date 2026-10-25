@@ -22,7 +22,7 @@ module Data.CSS.Escape where
 
 open import Data.Bool using (Bool; true; false; if_then_else_)
 open import Data.Char using (Char; fromℕ)
-open import Data.Char.Properties using (_≟_)
+open import Data.Char.Fast using (_≟_)
 open import Data.Empty using (⊥; ⊥-elim)
 open import Data.List using (List; []; _∷_; _++_)
 open import Data.List.Relation.Unary.All using (All; []; _∷_)

@@ -26,10 +26,10 @@ open import Data.Bool using (Bool; true; false; _∧_; _∨_; not; if_then_else_
 open import Data.Bool.ListAction using (all)
 open import Data.Char using (Char; toℕ)
 open import Data.Char.Class using (inRange; is; range)
-open import Data.Char.Properties using (_≟_)
+open import Data.Char.Fast using (_≟_)
 open import Data.Fin using (Fin)
 open import Data.List using (List; []; _∷_)
-open import Data.List.Membership.DecPropositional _≟_ using (_∈?_)
+open import Data.Char.Fast using (_∈?_)
 open import Data.Maybe using (Maybe; just; nothing)
 open import Relation.Nullary.Decidable using (⌊_⌋)
 

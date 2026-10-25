@@ -19,7 +19,7 @@
 module Data.CSS.Number where
 
 open import Data.Char using (Char)
-open import Data.Char.Properties using (_≟_)
+open import Data.Char.Fast using (_≟_)
 open import Data.Fin using (Fin)
 open import Data.List using (List; []; _∷_; _++_)
 open import Data.List.Properties using (++-assoc)
