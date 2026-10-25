@@ -9,7 +9,11 @@ parsers, and stdlib `RightInverse` stages (`Data.Stage`).
 - `Data.XML.*` — AST, escaping, tokens, lexer, parser, `Data.XML.RoundTrip.xmlStage`
 - `Data.SVG` — SVG elements over `Data.XML.Sanitize`
 - `Data.Invertible.*` — invertible-syntax primitives
-- `Data.Container.List`, `Data.Stage` — shared infrastructure
+- `Data.Container.List`, `Data.Container.Pos`, `Data.Container.Table`, `Data.Stage` — shared
+  infrastructure.  A node's children are indexed by `Pos n`, a number with an erased bound
+  (not the unary `Fin n`), and lists become position functions through a balanced tree, so
+  folding and building a node with `n` children is `O(n log n)`.
+- `Data.Char.Fast` — fast character equality and membership used by the lexers
 
 Check: `./make-everything.sh`.  Depends only on `standard-library`
 (`--safe --cubical-compatible`, no postulates).

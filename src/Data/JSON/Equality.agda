@@ -14,16 +14,18 @@ module Data.JSON.Equality where
 
 open import Level using (0ℓ)
 open import Data.Container.FreeMonad using (pure; impure)
-open import Data.Fin using (Fin; zero; suc)
 import Data.Nat as ℕ
-open import Data.List using (List; []; _∷_; length)
+open import Data.Nat.Properties using (suc-injective)
+open import Data.List.Properties using (length-map)
+open import Data.List using (List; []; _∷_; length; map; zip)
 open import Data.List.Relation.Binary.Pointwise as PW using (Pointwise; []; _∷_)
-open import Data.Product using (_×_; _,_)
+open import Data.Product using (_×_; _,_; Σ-syntax; proj₁; proj₂)
 open import Function using (_∘_)
 open import Relation.Binary using (Rel; Setoid; IsEquivalence)
 open import Relation.Binary.PropositionalEquality using (_≡_; refl; subst; cong; sym; trans)
 
 open import Data.JSON.AST
+open import Data.Container.List using (Pos; castP; pointwise-table; tabulate; length-tabulate)
 open JSONCont using (JSONC; array; object; prim; Key)
 
 infix 4 _≈ⱼ_
@@ -34,11 +36,11 @@ infix 4 _≈ⱼ_
 -- through `subst` along it.  Leaves must carry the same payload.
 data _≈ⱼ_ : Rel JSON 0ℓ where
   ≈prim   : ∀ {t x f g} → impure ((prim t , x) , f) ≈ⱼ impure ((prim t , x) , g)
-  ≈array  : ∀ {n m} {f : Fin n → JSON} {g : Fin m → JSON} (e : n ≡ m) →
-            (∀ i → f i ≈ⱼ g (subst Fin e i)) →
+  ≈array  : ∀ {n m} {f : Pos n → JSON} {g : Pos m → JSON} (e : n ≡ m) →
+            (∀ i → f i ≈ⱼ g (castP e i)) →
             impure ((array , n) , f) ≈ⱼ impure ((array , m) , g)
-  ≈object : ∀ {ks ls} {f : Fin (length ks) → JSON} {g : Fin (length ls) → JSON} (e : ks ≡ ls) →
-            (∀ i → f i ≈ⱼ g (subst (Fin ∘ length) e i)) →
+  ≈object : ∀ {ks ls} {f : Pos (length ks) → JSON} {g : Pos (length ls) → JSON} (e : ks ≡ ls) →
+            (∀ i → f i ≈ⱼ g (castP (cong length e) i)) →
             impure ((object , ks) , f) ≈ⱼ impure ((object , ls) , g)
 
 ≈ⱼ-refl : ∀ {v} → v ≈ⱼ v
@@ -76,44 +78,37 @@ JSONSetoid = record { isEquivalence = ≈ⱼ-isEquivalence }
 -- from `xs` (with `arrayⱼ` / `objectFromList′`) is bisimilar to it.
 ------------------------------------------------------------------------
 
-private
-  -- `subst` along `cong ℕ.suc e` / `cong (k ∷_) e` fixes `zero` and commutes with `suc`.
-  subst-Fin-zero : ∀ {a b} (e : a ≡ b) → subst Fin (cong ℕ.suc e) zero ≡ zero
-  subst-Fin-zero refl = refl
-
-  subst-Fin-suc : ∀ {a b} (e : a ≡ b) (i : Fin a) →
-                  subst Fin (cong ℕ.suc e) (suc i) ≡ suc (subst Fin e i)
-  subst-Fin-suc refl i = refl
-
-arrayⱼ-go : ∀ n (f : Fin n → JSON) (xs : List JSON) →
+-- If `xs` is pointwise bisimilar to the children of an array, the array
+-- built from `xs` is bisimilar to it.
+arrayⱼ-go : ∀ n (f : Pos n → JSON) (xs : List JSON) →
             Pointwise _≈ⱼ_ xs (JSONCont.listCToList (n , f)) →
             arrayⱼ xs ≈ⱼ impure ((array , n) , f)
-arrayⱼ-go ℕ.zero    f []       []         = ≈array refl (λ ())
-arrayⱼ-go (ℕ.suc n) f (x ∷ xs) (x≈ ∷ ps) with arrayⱼ-go n (f ∘ suc) xs ps
-... | ≈array e h = ≈array (cong ℕ.suc e) λ
-  { zero    → subst (λ j → x ≈ⱼ f j) (sym (subst-Fin-zero e)) x≈
-  ; (suc i) → subst (λ j → _ ≈ⱼ f j) (sym (subst-Fin-suc e i)) (h i)
-  }
-
-private
-  subst-Fin-zero′ : ∀ k {a b : List Key} (e : a ≡ b) → subst (Fin ∘ length) (cong (k ∷_) e) zero ≡ zero
-  subst-Fin-zero′ k refl = refl
-
-  subst-Fin-suc′ : ∀ k {a b : List Key} (e : a ≡ b) (i : Fin (length a)) →
-                   subst (Fin ∘ length) (cong (k ∷_) e) (suc i) ≡ suc (subst (Fin ∘ length) e i)
-  subst-Fin-suc′ k refl i = refl
+arrayⱼ-go n f xs pw = ≈array (proj₁ pt) (proj₂ pt)
+  where pt = pointwise-table xs n f pw
 
 -- Keyed children are related when their keys agree and their values are bisimilar.
 EntryRel : Rel (Key × JSON) 0ℓ
 EntryRel (k , x) (k′ , y) = k ≡ k′ × x ≈ⱼ y
 
-objectFromList′-go : ∀ ks (f : Fin (length ks) → JSON) (kvs : List (Key × JSON)) →
+private
+  -- Entries related to `zip ks vs` have those keys and related values.
+  zip-split : ∀ (kvs : List (Key × JSON)) ks (vs : List JSON) → length ks ≡ length vs →
+              Pointwise EntryRel kvs (zip ks vs) →
+              map proj₁ kvs ≡ ks × Pointwise _≈ⱼ_ (map proj₂ kvs) vs
+  zip-split []              []        []        _  []  = refl , []
+  zip-split []              []        (v ∷ vs)  () _
+  zip-split []              (k ∷ ks)  []       ()  _
+  zip-split []              (k ∷ ks)  (v ∷ vs) _   ()
+  zip-split (kv ∷ kvs)      []        vs        _   ()
+  zip-split (kv ∷ kvs)      (k ∷ ks)  []        ()  _
+  zip-split ((k₀ , x) ∷ kvs) (k ∷ ks) (v ∷ vs)  lt  ((refl , x≈) ∷ ps)
+    with zip-split kvs ks vs (suc-injective lt) ps
+  ... | e , pw = cong (k₀ ∷_) e , x≈ ∷ pw
+
+objectFromList′-go : ∀ ks (f : Pos (length ks) → JSON) (kvs : List (Key × JSON)) →
                      Pointwise EntryRel kvs (JSONCont.objectCToEntries (ks , f)) →
                      objectFromList′ kvs ≈ⱼ impure ((object , ks) , f)
-objectFromList′-go []       f []              []                 = ≈object refl (λ ())
-objectFromList′-go (k ∷ ks) f ((k₀ , x) ∷ kvs) ((refl , x≈) ∷ ps)
-  with objectFromList′-go ks (f ∘ suc) kvs ps
-... | ≈object e h = ≈object (cong (k ∷_) e) λ
-  { zero    → subst (λ j → x ≈ⱼ f j) (sym (subst-Fin-zero′ k e)) x≈
-  ; (suc i) → subst (λ j → _ ≈ⱼ f j) (sym (subst-Fin-suc′ k e i)) (h i)
-  }
+objectFromList′-go ks f kvs pw = ≈object (proj₁ zs) (λ i → proj₂ pt (castP (trans (length-map proj₁ kvs) (sym (length-map proj₂ kvs))) i))
+  where
+  zs = zip-split kvs ks (tabulate (length ks) f) (sym (length-tabulate (length ks) f)) pw
+  pt = pointwise-table (map proj₂ kvs) (length ks) f (proj₂ zs)

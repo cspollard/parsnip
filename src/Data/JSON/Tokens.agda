@@ -14,8 +14,7 @@ module Data.JSON.Tokens where
 
 open import Data.Bool using (true; false)
 open import Data.Empty using (⊥; ⊥-elim)
-open import Data.Fin using (Fin; zero; suc)
-open import Data.List as List using (List; []; _∷_; _++_; intercalate; last; head)
+open import Data.List as List using (List; []; _∷_; _++_; intercalate; last; head; zip)
 open import Data.List.Relation.Unary.Linked as Linked using (Linked; []; [-]; _∷_; _∷′_)
 open import Data.List.Relation.Unary.Linked.Properties using (++⁺)
 open import Data.List.Relation.Unary.All using (All; []; _∷_)
@@ -28,7 +27,7 @@ open import Data.Container using (⟦_⟧)
 open import Data.Container.FreeMonad using (pure; impure)
 open import Data.Unit using (⊤; tt)
 open import Function using (_∘_)
-open import Relation.Binary.PropositionalEquality using (_≡_; refl; cong)
+open import Relation.Binary.PropositionalEquality using (_≡_; refl; cong; cong₂; sym; trans)
 
 open import Data.JSON.AST
 open JSONCont
@@ -61,24 +60,29 @@ printTokens = foldJSONM (λ ()) go
 -- Unfolding `printTokens` at arrays and objects
 ------------------------------------------------------------------------
 
-listCToList-map : ∀ {A B : Set} n (f : Fin n → A) (g : A → B) →
+listCToList-map : ∀ {A B : Set} n (f : Pos n → A) (g : A → B) →
                   listCToList (n , g ∘ f) ≡ List.map g (listCToList (n , f))
-listCToList-map zero    f g = refl
-listCToList-map (suc n) f g = cong (g (f zero) ∷_) (listCToList-map n (f ∘ suc) g)
+listCToList-map n f g = tabulate-map n f g
 
-objectCToEntries-map : ∀ {A B : Set} ks (f : Fin (List.length ks) → A) (g : A → B) →
+private
+  zip-map : ∀ {A B C : Set} (ks : List A) (vs : List B) (g : B → C) →
+            zip ks (List.map g vs) ≡ List.map (λ p → proj₁ p , g (Data.Product.proj₂ p)) (zip ks vs)
+  zip-map []       vs       g = refl
+  zip-map (k ∷ ks) []       g = refl
+  zip-map (k ∷ ks) (v ∷ vs) g = cong ((k , g v) ∷_) (zip-map ks vs g)
+
+objectCToEntries-map : ∀ {A B : Set} ks (f : Pos (List.length ks) → A) (g : A → B) →
                        objectCToEntries (ks , g ∘ f)
                          ≡ List.map (λ p → proj₁ p , g (Data.Product.proj₂ p)) (objectCToEntries (ks , f))
-objectCToEntries-map []       f g = refl
-objectCToEntries-map (k ∷ ks) f g =
-  cong ((k , g (f zero)) ∷_) (objectCToEntries-map ks (f ∘ suc) g)
+objectCToEntries-map ks f g =
+  trans (cong (zip ks) (tabulate-map (List.length ks) f g)) (zip-map ks (tabulate (List.length ks) f) g)
 
-printTokens-array : ∀ n (f : Fin n → JSON) →
+printTokens-array : ∀ n (f : Pos n → JSON) →
   printTokens (impure ((array , n) , f))
     ≡ lbracketT ∷ elems (List.map printTokens (listCToList (n , f))) ++ rbracketT ∷ []
 printTokens-array n f = cong (λ l → lbracketT ∷ elems l ++ rbracketT ∷ []) (listCToList-map n f printTokens)
 
-printTokens-object : ∀ ks (f : Fin (List.length ks) → JSON) →
+printTokens-object : ∀ ks (f : Pos (List.length ks) → JSON) →
   printTokens (impure ((object , ks) , f))
     ≡ lbraceT ∷ elems (List.map entry (objectCToEntries (ks , printTokens ∘ f))) ++ rbraceT ∷ []
 printTokens-object ks f = refl
@@ -140,15 +144,15 @@ private
     connected-sep-l (stringT k) (λ ()) (just colonT)
       ∷′ (connected-sep-l colonT (λ ()) (head ts) ∷′ vts)
 
-  all-listC : ∀ {A : Set} {P : A → Set} n (g : Fin n → A) → (∀ i → P (g i)) →
-              All P (listCToList (n , g))
-  all-listC zero    g p = []
-  all-listC (suc n) g p = p zero ∷ all-listC n (g ∘ suc) (p ∘ suc)
+  all-entries′ : ∀ {ks : List Key} {vs : List (List JSONToken)} → All Valid vs →
+                 All Valid (List.map entry (zip ks vs))
+  all-entries′ {ks = []}     _          = []
+  all-entries′ {ks = k ∷ ks} {[]}      _          = []
+  all-entries′ {ks = k ∷ ks} {v ∷ vs}  (pv ∷ pvs) = valid-entry k pv ∷ all-entries′ pvs
 
-  all-entries : ∀ ks (g : Fin (List.length ks) → List JSONToken) → (∀ i → Valid (g i)) →
+  all-entries : ∀ ks (g : Pos (List.length ks) → List JSONToken) → (∀ i → Valid (g i)) →
                 All Valid (List.map entry (objectCToEntries (ks , g)))
-  all-entries []       g p = []
-  all-entries (k ∷ ks) g p = valid-entry k (p zero) ∷ all-entries ks (g ∘ suc) (p ∘ suc)
+  all-entries ks g p = all-entries′ (all-tabulate (List.length ks) g p)
 
 printTokens-valid : ∀ v → ValidTokenSeq (printTokens v)
 printTokens-valid (pure ())
@@ -157,7 +161,7 @@ printTokens-valid (impure ((object , ks) , f)) =
     (valid-elems _ (all-entries ks (printTokens ∘ f) (λ i → printTokens-valid (f i))))
 printTokens-valid (impure ((array , n) , f)) =
   valid-wrap lbracketT rbracketT (λ ()) (λ ())
-    (valid-elems _ (all-listC n (printTokens ∘ f) (λ i → printTokens-valid (f i))))
+    (valid-elems _ (all-tabulate n (printTokens ∘ f) (λ i → printTokens-valid (f i))))
 printTokens-valid (impure ((prim primstring , s) , f)) = [-]
 printTokens-valid (impure ((prim primnumber , n) , f)) = [-]
 printTokens-valid (impure ((prim primbool , b) , f))   = [-]
@@ -170,20 +174,9 @@ printTokens-valid (impure ((prim primnull , u) , f))   = [-]
 open import Data.JSON.Equality using (_≈ⱼ_; ≈prim; ≈array; ≈object)
 
 private
-  listCToList-cong : ∀ {A : Set} n (F G : Fin n → A) → (∀ i → F i ≡ G i) →
-                     listCToList (n , F) ≡ listCToList (n , G)
-  listCToList-cong zero    F G p = refl
-  listCToList-cong (suc n) F G p =
-    Relation.Binary.PropositionalEquality.cong₂ _∷_ (p zero)
-      (listCToList-cong n (F ∘ suc) (G ∘ suc) (p ∘ suc))
-
-  objectCToEntries-cong : ∀ {A : Set} ks (F G : Fin (List.length ks) → A) → (∀ i → F i ≡ G i) →
+  objectCToEntries-cong : ∀ {A : Set} ks (F G : Pos (List.length ks) → A) → (∀ i → F i ≡ G i) →
                           objectCToEntries (ks , F) ≡ objectCToEntries (ks , G)
-  objectCToEntries-cong []       F G p = refl
-  objectCToEntries-cong (k ∷ ks) F G p =
-    Relation.Binary.PropositionalEquality.cong₂ _∷_
-      (cong (k ,_) (p zero))
-      (objectCToEntries-cong ks (F ∘ suc) (G ∘ suc) (p ∘ suc))
+  objectCToEntries-cong ks F G p = cong (zip ks) (tabulate-cong (List.length ks) F G p)
 
 printTokens-cong : ∀ {v w} → v ≈ⱼ w → printTokens v ≡ printTokens w
 printTokens-cong (≈prim {primstring}) = refl
@@ -192,7 +185,7 @@ printTokens-cong (≈prim {primbool})   = refl
 printTokens-cong (≈prim {primnull})   = refl
 printTokens-cong (≈array {n} {_} {f} {g} refl h) =
   cong (λ l → lbracketT ∷ elems l ++ rbracketT ∷ [])
-       (listCToList-cong n (printTokens ∘ f) (printTokens ∘ g) (λ i → printTokens-cong (h i)))
+       (tabulate-cong n (printTokens ∘ f) (printTokens ∘ g) (λ i → printTokens-cong (h i)))
 printTokens-cong (≈object {ks} {_} {f} {g} refl h) =
   cong (λ l → lbraceT ∷ elems (List.map entry l) ++ rbraceT ∷ [])
        (objectCToEntries-cong ks (printTokens ∘ f) (printTokens ∘ g) (λ i → printTokens-cong (h i)))

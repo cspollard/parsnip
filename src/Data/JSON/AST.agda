@@ -7,8 +7,8 @@
 -- shape (its type, plus the payload of a leaf or the length of an array,
 -- or the keys of an object) and one child per position.
 --
--- * Arrays are `ListC = ℕ ▷ Fin` (`Data.Container.List`).
--- * Objects are `ObjectC = List (List Char) ▷ (Fin ∘ length)`: keys in order,
+-- * Arrays are `ListC = ℕ ▷ Pos` (`Data.Container.List`).
+-- * Objects are `ObjectC = List (List Char) ▷ (Pos ∘ length)`: keys in order,
 --   one child per key.  RFC 8259 §4 only says that names SHOULD be
 --   unique, so duplicate keys are representable (and round-trip).
 -- * String payloads are `List Char`: the `String ↔ List Char` round trip
@@ -23,17 +23,17 @@ open import Data.Bool using (Bool; true; false)
 open import Data.Char using (Char)
 open import Data.Nat using (ℕ; zero; suc)
 open import Data.String using (String; toList)
-open import Data.List using (List; []; _∷_; length)
+open import Data.List using (List; []; _∷_; length; zip)
 import Data.List as L
 open import Data.Product using (_×_; _,_; proj₁; proj₂; map₁)
 open import Data.Unit using (⊤; tt)
 open import Data.Empty using (⊥)
-open import Data.Fin using (Fin; zero; suc)
 open import Function using (_∘_)
-open import Data.Container hiding (refl)
+open import Data.Container hiding (refl; trans; sym)
 import Data.Container.Combinator as CC
 open import Data.Container.FreeMonad as FM
-open import Relation.Binary.PropositionalEquality using (_≡_; refl)
+open import Data.List.Properties using (length-map)
+open import Relation.Binary.PropositionalEquality using (_≡_; refl; trans; sym)
 open import Data.JSON.Number using (JSONNumber; jsonNumber) public
 
 private variable
@@ -55,21 +55,18 @@ module JSONCont where
   Key = List Char
 
   ObjectC : Container 0ℓ 0ℓ
-  ObjectC = List Key ▷ (Fin ∘ length)
+  ObjectC = List Key ▷ (Pos ∘ length)
 
   -- The keyed children, in key order.
   objectCToEntries : ⟦ ObjectC ⟧ A → List (Key × A)
-  objectCToEntries (ks , f) = go ks f
-    where
-    go : ∀ ks → (Fin (length ks) → _) → List (Key × _)
-    go []       _ = []
-    go (k ∷ ks) f = (k , f zero) ∷ go ks (f ∘ suc)
+  objectCToEntries (ks , f) = zip ks (tabulate (length ks) f)
 
   entriesToObjectC : List (Key × A) → ⟦ ObjectC ⟧ A
-  entriesToObjectC = L.foldr add ([] , λ ())
+  entriesToObjectC kvs = L.map proj₁ kvs , table (L.map proj₂ kvs) ∘ castP (length-map-eq kvs)
     where
-    add : _ → ⟦ ObjectC ⟧ _ → ⟦ ObjectC ⟧ _
-    add (k , x) p = k ∷ proj₁ p , λ { zero → x; (suc i) → proj₂ p i }
+    -- (never evaluated: casting positions does not look at the proof)
+    length-map-eq : ∀ kvs → length (L.map proj₁ kvs) ≡ length (L.map proj₂ kvs)
+    length-map-eq kvs = trans (length-map proj₁ kvs) (sym (length-map proj₂ kvs))
 
   ----------------------------------------------------------------------
   -- The signature of JSON values

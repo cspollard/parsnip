@@ -14,7 +14,7 @@ module Data.XML.Tokens where
 
 open import Data.Bool using (Bool; true; false; _∧_; not; T)
 open import Data.Bool.ListAction using (all)
-open import Data.Fin using (Fin; zero; suc)
+open import Data.Container.List using (Pos; zeroP; sucP; noPos)
 open import Data.List as List using (List; []; _∷_; _++_)
 open import Data.Nat using (ℕ; zero; suc)
 open import Data.Product using (_×_; _,_; proj₁; proj₂; ∃)
@@ -22,7 +22,7 @@ open import Data.Container.FreeMonad using (pure; impure)
 open import Data.Unit using (tt)
 open import Data.Vec using (Vec; []; _∷_)
 open import Function using (_∘_)
-open import Relation.Binary.PropositionalEquality using (_≡_; refl; cong; cong₂)
+open import Relation.Binary.PropositionalEquality using (_≡_; refl; cong; cong₂; subst; sym; trans)
 
 open import Data.XML.AST
 open import Data.XML.Valid
@@ -63,13 +63,14 @@ printTokens : XMLDoc → List XMLToken
 printTokens = foldXMLM (λ ()) elementTokens
 
 -- `printTokens` at a node.
-printTokens-node : ∀ tag attrs n ts pt pa px (f : Fin n → XMLDoc) →
+printTokens-node : ∀ tag attrs n ts pt pa px (f : Pos n → XMLDoc) →
   printTokens (impure (shape tag attrs n ts pt pa px , f))
-    ≡ elementTokens tag attrs (mixed n ts (printTokens ∘ f))
-printTokens-node tag attrs n ts pt pa px f = refl
+    ≡ elementTokens tag attrs (mixedS n ts (printTokens ∘ f))
+printTokens-node tag attrs n ts pt pa px f =
+  cong (elementTokens tag attrs) (mixed≡mixedS n ts (printTokens ∘ f))
 
 ------------------------------------------------------------------------
--- `mixed` commutes with mapping the children
+-- `mixedS` commutes with mapping the children
 ------------------------------------------------------------------------
 
 mapChildren : ∀ {A B : Set} → (A → B) → List (A × Text) → List (B × Text)
@@ -78,17 +79,17 @@ mapChildren h = List.map (λ { (x , t) → h x , t })
 mapContent : ∀ {A B : Set} → (A → B) → Content A → Content B
 mapContent h (t , cs) = t , mapChildren h cs
 
-mixed-map : ∀ {A B : Set} n (ts : Vec Text (suc n)) (g : Fin n → A) (h : A → B) →
-            mixed n ts (h ∘ g) ≡ mapContent h (mixed n ts g)
-mixed-map zero    (t ∷ [])  g h = refl
-mixed-map (suc n) (t ∷ ts) g h =
-  cong (λ m → t , (h (g zero) , proj₁ m) ∷ proj₂ m) (mixed-map n ts (g ∘ suc) h)
+mixedS-map : ∀ {A B : Set} n (ts : Vec Text (suc n)) (g : Pos n → A) (h : A → B) →
+            mixedS n ts (h ∘ g) ≡ mapContent h (mixedS n ts g)
+mixedS-map zero    (t ∷ [])  g h = refl
+mixedS-map (suc n) (t ∷ ts) g h =
+  cong (λ m → t , (h (g zeroP) , proj₁ m) ∷ proj₂ m) (mixedS-map n ts (g ∘ sucP) h)
 
-mixed-cong : ∀ {B : Set} n (ts : Vec Text (suc n)) (F G : Fin n → B) → (∀ i → F i ≡ G i) →
-             mixed n ts F ≡ mixed n ts G
-mixed-cong zero    (t ∷ [])  F G p = refl
-mixed-cong (suc n) (t ∷ ts) F G p =
-  cong₂ (λ x m → t , (x , proj₁ m) ∷ proj₂ m) (p zero) (mixed-cong n ts (F ∘ suc) (G ∘ suc) (p ∘ suc))
+mixedS-cong : ∀ {B : Set} n (ts : Vec Text (suc n)) (F G : Pos n → B) → (∀ i → F i ≡ G i) →
+             mixedS n ts F ≡ mixedS n ts G
+mixedS-cong zero    (t ∷ [])  F G p = refl
+mixedS-cong (suc n) (t ∷ ts) F G p =
+  cong₂ (λ x m → t , (x , proj₁ m) ∷ proj₂ m) (p zeroP) (mixedS-cong n ts (F ∘ sucP) (G ∘ sucP) (p ∘ sucP))
 
 ------------------------------------------------------------------------
 -- The first token
@@ -103,7 +104,7 @@ printTokens-head : ∀ v → ∃ λ t → ∃ λ ts → printTokens v ≡ t ∷ 
 printTokens-head (pure ())
 printTokens-head (impure (shape tag attrs zero ([] ∷ []) pt pa px , f))        = selfT tag attrs , [] , refl , selfS
 printTokens-head (impure (shape tag attrs zero ((x ∷ xs) ∷ []) pt pa px , f)) = openT tag attrs , _ , refl , openS
-printTokens-head (impure (shape tag attrs (suc n) (t ∷ ts) pt pa px , f))     = openT tag attrs , _ , refl , openS
+printTokens-head (impure (shape tag attrs (suc n) (t ∷ t₁ ∷ ts) pt pa px , f)) = openT tag attrs , _ , refl , openS
 
 ------------------------------------------------------------------------
 -- The stream is valid
@@ -137,13 +138,13 @@ private
   text-run (x ∷ xs) = step refl tt done
 
   -- The tokens of a content, started after a start tag.
-  content-run : ∀ n (ts : Vec Text (suc n)) (g : Fin n → List XMLToken) →
+  content-run : ∀ n (ts : Vec Text (suc n)) (g : Pos n → List XMLToken) →
                 (∀ i p → Run p false (g i)) →
-                ∃ λ q → Run false q (contentTokens (mixed n ts g))
+                ∃ λ q → Run false q (contentTokens (mixedS n ts g))
   content-run zero    ([] ∷ [])        g _ = false , done
   content-run zero    ((x ∷ xs) ∷ [])  g _ = true , step refl tt done
-  content-run (suc n) (t ∷ ts)         g r with content-run n ts (g ∘ suc) (r ∘ suc)
-  ... | q , rest = q , run++ (text-run t) (run++ (r zero (slot t)) rest)
+  content-run (suc n) (t ∷ ts)         g r with content-run n ts (g ∘ sucP) (r ∘ sucP)
+  ... | q , rest = q , run++ (text-run t) (run++ (r zeroP (slot t)) rest)
 
   -- A start tag, the tokens of its content, and the end tag.
   open′ : ∀ {p c} tag attrs → T (isValidName tag) → T (isValidAttrs attrs) →
@@ -153,16 +154,23 @@ private
     step (∧-join (toEq pt) (names attrs (toEq pa))) (notText p)
          (run++ r (step (toEq pt) (notText q) done))
 
-  elem-run : ∀ v p → Run p false (printTokens v)
-  elem-run (pure ()) p
-  elem-run (impure (shape tag attrs zero ([] ∷ []) pt pa px , f)) p =
-    step (∧-join (toEq pt) (names attrs (toEq pa))) (notText p) done
-  elem-run (impure (shape tag attrs zero ((x ∷ xs) ∷ []) pt pa px , f)) p =
-    open′ {c = mixed zero ((x ∷ xs) ∷ []) (printTokens ∘ f)} tag attrs pt pa
-      (content-run zero ((x ∷ xs) ∷ []) (printTokens ∘ f) (λ ()))
-  elem-run (impure (shape tag attrs (suc n) (t ∷ ts) pt pa px , f)) p =
-    open′ {c = mixed (suc n) (t ∷ ts) (printTokens ∘ f)} tag attrs pt pa
-      (content-run (suc n) (t ∷ ts) (printTokens ∘ f) (λ i q → elem-run (f i) q))
+  mutual
+    elem-run : ∀ v p → Run p false (printTokens v)
+    elem-run (pure ()) p
+    elem-run (impure (shape tag attrs n ts pt pa px , f)) p =
+      subst (Run p false) (sym (printTokens-node tag attrs n ts pt pa px f))
+            (node-run tag attrs n ts pt pa px f p)
+
+    node-run : ∀ tag attrs n ts pt pa px (f : Pos n → XMLDoc) p →
+               Run p false (elementTokens tag attrs (mixedS n ts (printTokens ∘ f)))
+    node-run tag attrs zero ([] ∷ []) pt pa px f p =
+      step (∧-join (toEq pt) (names attrs (toEq pa))) (notText p) done
+    node-run tag attrs zero ((x ∷ xs) ∷ []) pt pa px f p =
+      open′ {c = mixedS zero ((x ∷ xs) ∷ []) (printTokens ∘ f)} tag attrs pt pa
+        (content-run zero ((x ∷ xs) ∷ []) (printTokens ∘ f) (λ i → noPos i))
+    node-run tag attrs (suc n) (t ∷ ts) pt pa px f p =
+      open′ {c = mixedS (suc n) (t ∷ ts) (printTokens ∘ f)} tag attrs pt pa
+        (content-run (suc n) (t ∷ ts) (printTokens ∘ f) (λ i q → elem-run (f i) q))
 
 printTokens-valid : ∀ v → Run false false (printTokens v)
 printTokens-valid v = elem-run v false
@@ -172,6 +180,8 @@ printTokens-valid v = elem-run v false
 ------------------------------------------------------------------------
 
 printTokens-cong : ∀ {v w} → v ≈ₓ w → printTokens v ≡ printTokens w
-printTokens-cong (≈element {tag} {attrs} {n} {ts = ts} {f = f} {g = g} refl refl h) =
-  cong (elementTokens tag attrs)
-       (mixed-cong n ts (printTokens ∘ f) (printTokens ∘ g) (λ i → printTokens-cong (h i)))
+printTokens-cong (≈element {tag} {attrs} {n} {ts = ts} {pt = pt} {pt′ = pt′} {pa = pa} {pa′ = pa′} {px = px} {px′ = px′} {f = f} {g = g} refl refl h) =
+  trans (printTokens-node tag attrs n ts pt pa px f)
+    (trans (cong (elementTokens tag attrs)
+                 (mixedS-cong n ts (printTokens ∘ f) (printTokens ∘ g) (λ i → printTokens-cong (h i))))
+           (sym (printTokens-node tag attrs n ts pt′ pa′ px′ g)))

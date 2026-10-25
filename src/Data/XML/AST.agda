@@ -5,7 +5,7 @@
 --
 -- A document is `XMLC ⋆ ⊥` (`Data.Container.FreeMonad`).  Every node is an
 -- element; its shape is the tag, the attributes, and the text around its
--- `n` children, and it has one child per position (`Fin n`).
+-- `n` children, and it has one child per position (`Pos n`, `Data.Container.Pos`).
 --
 -- * Text uses XML's mixed-content layout: an element with `n` children
 --   carries `n + 1` text slots, `t₀ e₁ t₁ … eₙ tₙ`, where an empty slot
@@ -26,17 +26,18 @@ module Data.XML.AST where
 open import Level using (0ℓ; Level)
 open import Data.Bool using (Bool; true; false; _∧_; T)
 open import Data.Nat using (ℕ; zero; suc)
-open import Data.List using (List; []; _∷_)
+open import Data.List using (List; []; _∷_; length; map; zip)
 open import Data.Product using (_×_; _,_; Σ; proj₁; proj₂)
 open import Data.Unit using (tt)
 open import Data.Empty using (⊥)
-open import Data.Fin using (Fin; zero; suc)
-open import Data.Vec using (Vec; []; _∷_; replicate)
+open import Data.Vec using (Vec; []; _∷_; replicate; head; tail; toList)
 open import Function using (_∘_)
 open import Data.Container using (Container; ⟦_⟧; _▷_)
 open import Data.Container.FreeMonad as FM using (_⋆_)
 
 open import Data.Container.List
+open import Data.List.Properties using (length-map)
+open import Relation.Binary.PropositionalEquality using (_≡_; refl; trans; sym; cong)
 open import Data.XML.Valid
 open import Data.XML.Valid public using (Name; Text; Attribute; Attributes)
 
@@ -44,6 +45,7 @@ private variable
   a b : Level
   A : Set a
   B : Set b
+  n : ℕ
 
 -- put in module to avoid clashes
 module XMLCont where
@@ -64,7 +66,7 @@ module XMLCont where
       validTexts : T (isValidTexts texts)
 
   XMLC : Container 0ℓ 0ℓ
-  XMLC = XMLShape ▷ (Fin ∘ XMLShape.arity)
+  XMLC = XMLShape ▷ (Pos ∘ XMLShape.arity)
 
   XMLM : Set a → Set a
   XMLM A = XMLC ⋆ A
@@ -83,25 +85,39 @@ module XMLCont where
   Content : Set b → Set b
   Content B = Text × List (B × Text)
 
-  mixed : ∀ n → Vec Text (suc n) → (Fin n → B) → Content B
-  mixed zero    (t ∷ [])  f = t , []
-  mixed (suc n) (t ∷ ts) f =
-    let m = mixed n ts (f ∘ suc) in t , (f zero , proj₁ m) ∷ proj₂ m
+  -- The content of an element, read off its children in order (linear in
+  -- the number of children).
+  mixed : ∀ n → Vec Text (suc n) → (Pos n → B) → Content B
+  mixed n ts f = head ts , zip (tabulate n f) (toList (tail ts))
+
+  -- The same by structural recursion on the arity; this is the form the
+  -- proofs unfold (`mixed≡mixedS`).
+  mixedS : ∀ n → Vec Text (suc n) → (Pos n → B) → Content B
+  mixedS zero    (t ∷ [])  f = t , []
+  mixedS (suc n) (t ∷ ts) f =
+    let m = mixedS n ts (f ∘ sucP) in t , (f zeroP , proj₁ m) ∷ proj₂ m
+
+  mixed≡mixedS : ∀ n (ts : Vec Text (suc n)) (f : Pos n → B) → mixed n ts f ≡ mixedS n ts f
+  mixed≡mixedS zero    (t ∷ [])      f = refl
+  mixed≡mixedS (suc n) (t ∷ t₁ ∷ ts) f =
+    trans (cong (λ l → t , zip l (t₁ ∷ toList ts)) (tabulate-suc n f))
+          (cong (λ m → t , (f zeroP , proj₁ m) ∷ proj₂ m) (mixed≡mixedS n (t₁ ∷ ts) (f ∘ sucP)))
 
   -- The data of an element's content: its arity, text slots and children.
   NodeData : Set b → Set b
-  NodeData B = Σ ℕ (λ n → Vec Text (suc n) × (Fin n → B))
+  NodeData B = Σ ℕ (λ n → Vec Text (suc n) × (Pos n → B))
 
-  consNode : Text → B → NodeData B → NodeData B
-  consNode t b (n , ts , f) = suc n , t ∷ ts , λ { zero → b; (suc i) → f i }
+  -- Text slots `t, t₁, …`: one more than there are children.
+  textSlots : Text → (cs : List (B × Text)) → Vec Text (suc (length cs))
+  textSlots t []              = t ∷ []
+  textSlots t ((b , t′) ∷ cs) = t ∷ textSlots t′ cs
 
-  -- The inverse of `mixed`.
-  fromContent′ : Text → List (B × Text) → NodeData B
-  fromContent′ t []             = zero , (t ∷ []) , λ ()
-  fromContent′ t ((b , t′) ∷ cs) = consNode t b (fromContent′ t′ cs)
-
+  -- The inverse of `mixed`; the children go in a balanced table
+  -- (`Data.Container.Table`), so this is `O(n log n)`.
   fromContent : Content B → NodeData B
-  fromContent (t , cs) = fromContent′ t cs
+  fromContent (t , cs) =
+    length cs , textSlots t cs
+      , table (map proj₁ cs) ∘ castP (sym (length-map proj₁ cs))
 
   foldXMLC : (Name → Attributes → Content B → B) → ⟦ XMLC ⟧ B → B
   foldXMLC alg (s , f) = alg tag attrs (mixed arity texts f)
@@ -117,7 +133,7 @@ module XMLCont where
   -- An element given as its shape components: `n + 1` text slots and `n`
   -- children.
   node : (tag : Name) (attrs : Attributes) {n : ℕ}
-         (texts : Vec Text (suc n)) (cs : Fin n → XMLM A)
+         (texts : Vec Text (suc n)) (cs : Pos n → XMLM A)
          {pt : T (isValidName tag)} {pa : T (isValidAttrs attrs)}
          {px : T (isValidTexts texts)} → XMLM A
   node tag attrs texts cs {pt} {pa} {px} = FM.impure (shape tag attrs _ texts pt pa px , cs)
@@ -133,7 +149,7 @@ module XMLCont where
   -- An element with only text.
   leaf : (tag : Name) (attrs : Attributes) (t : Text)
          {pt : T (isValidName tag)} {pa : T (isValidAttrs attrs)} {px : T (isValidText t)} → XMLM A
-  leaf tag attrs t {pt} {pa} {px} = node tag attrs (t ∷ []) (λ ()) {pt} {pa} {leafOK px}
+  leaf tag attrs t {pt} {pa} {px} = node tag attrs (t ∷ []) (λ p → noPos p) {pt} {pa} {leafOK px}
 
   -- An element with only element children.
   parent : (tag : Name) (attrs : Attributes) → ⟦ ListC ⟧ (XMLM A) →
@@ -145,6 +161,6 @@ module XMLCont where
   parentList tag attrs cs {pt} {pa} = parent tag attrs (listToListC cs) {pt} {pa}
 
 open XMLCont public using
-  ( XMLShape; shape; XMLC; XMLM; XMLDoc; Content; mixed; NodeData; consNode; fromContent′; fromContent
+  ( XMLShape; shape; XMLC; XMLM; XMLDoc; Content; mixed; mixedS; mixed≡mixedS; NodeData; textSlots; fromContent
   ; foldXMLC; foldXMLM; node; leaf; parent; parentList
   )

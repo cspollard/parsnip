@@ -15,8 +15,7 @@ module Data.JSON.Parser where
 
 open import Level using (0ℓ)
 open import Data.Char using (Char)
-open import Data.Fin using (Fin; zero; suc)
-open import Data.List as List using (List; []; _∷_; _++_; length)
+open import Data.List as List using (List; []; _∷_; _++_; length; zip)
 open import Data.Maybe as Maybe using (Maybe; just; nothing; fromMaybe)
 open import Data.Nat using (ℕ; zero; suc; _≤_; _<_; s≤s)
 open import Data.Nat.Properties using (≤-trans; m≤m+n; m≤n+m; +-comm; n≤1+n)
@@ -29,6 +28,7 @@ open import Function.Bundles using (RightInverse)
 open import Relation.Binary.PropositionalEquality using (_≡_; refl; sym; trans; cong; subst)
 
 open import Data.JSON.AST
+open import Data.Container.List using (Pos; all-tabulate)
 open JSONCont using (Key)
 open import Data.JSON.Token
 open import Data.JSON.Lexer using (ValidTokens; ValidTokenSeq)
@@ -195,17 +195,17 @@ private
     (refl , ≈v) ∷ pw
 
 private
-  all-listC : ∀ {P : JSON → Set} n (g : Fin n → JSON) → (∀ i → P (g i)) →
-              All P (JSONCont.listCToList (n , g))
-  all-listC zero    g p = []
-  all-listC (suc n) g p = p zero ∷ all-listC n (g ∘ suc) (p ∘ suc)
+  all-zip : ∀ {P : JSON → Set} {ks : List Key} {vs : List JSON} → All P vs →
+            All (λ p → P (proj₂ p)) (zip ks vs)
+  all-zip {ks = []}     _          = []
+  all-zip {ks = k ∷ ks} {[]}      _          = []
+  all-zip {ks = k ∷ ks} {v ∷ vs}  (pv ∷ pvs) = pv ∷ all-zip pvs
 
-  all-entries : ∀ {P : JSON → Set} ks (g : Fin (length ks) → JSON) → (∀ i → P (g i)) →
+  all-entries : ∀ {P : JSON → Set} ks (g : Pos (length ks) → JSON) → (∀ i → P (g i)) →
                 All (λ p → P (proj₂ p)) (JSONCont.objectCToEntries (ks , g))
-  all-entries []       g p = []
-  all-entries (k ∷ ks) g p = p zero ∷ all-entries ks (g ∘ suc) (p ∘ suc)
+  all-entries ks g p = all-zip (all-tabulate (length ks) g p)
 
-  printTokens-object′ : ∀ ks (f : Fin (length ks) → JSON) →
+  printTokens-object′ : ∀ ks (f : Pos (length ks) → JSON) →
     printTokens (impure ((JSONCont.object , ks) , f))
       ≡ lbraceT ∷ elems (List.map entryOf (JSONCont.objectCToEntries (ks , f))) ++ rbraceT ∷ []
   printTokens-object′ ks f =
@@ -223,7 +223,7 @@ private
   print-ok-via v T eq core rest fuel le with core rest fuel (subst (λ X → length X ≤ fuel) eq le)
   ... | v′ , p , ≈v = v′ , subst (λ X → parseValue fuel (X ++ rest) ≡ just (v′ , rest)) (sym eq) p , ≈v
 
-  arrayCase : ∀ n (f : Fin n → JSON) → (∀ i → Print-ok (f i)) →
+  arrayCase : ∀ n (f : Pos n → JSON) → (∀ i → Print-ok (f i)) →
               Print-ok (impure ((JSONCont.array , n) , f))
   arrayCase n f ih = print-ok-via _ _ (printTokens-array n f) core
     where
@@ -234,7 +234,7 @@ private
            ∃ λ v′ → parseValue fuel ((lbracketT ∷ E ++ rbracketT ∷ []) ++ rest) ≡ just (v′ , rest)
                   × v′ ≈ⱼ impure ((JSONCont.array , n) , f)
     core rest zero ()
-    core rest (suc g) (s≤s le) with arrayLoop-print xs (all-listC n f ih) rest g
+    core rest (suc g) (s≤s le) with arrayLoop-print xs (all-tabulate n f ih) rest g
                               (subst (_≤ g) (trans (length-++ E) (+-comm (length E) 1)) le)
     ... | xs′ , eqL , pw =
       arrayⱼ xs′ ,
@@ -243,25 +243,37 @@ private
             (cong (Maybe.map (map₁ arrayⱼ)) eqL) ,
       arrayⱼ-go n f xs′ pw
 
-  objectCase : ∀ ks (f : Fin (length ks) → JSON) → (∀ i → Print-ok (f i)) →
-               Print-ok (impure ((JSONCont.object , ks) , f))
-  objectCase ks f ih = print-ok-via _ _ (printTokens-object′ ks f) core
+  -- (`kvs` is a variable, tied to the children by `eq`, so that `with`
+  -- can abstract over it.)
+  objectCore : ∀ ks (f : Pos (length ks) → JSON) kvs → JSONCont.objectCToEntries (ks , f) ≡ kvs →
+               All (λ p → Print-ok (proj₂ p)) kvs → ∀ rest fuel →
+               length (lbraceT ∷ elems (List.map entryOf kvs) ++ rbraceT ∷ []) ≤ fuel →
+               ∃ λ v′ → parseValue fuel ((lbraceT ∷ elems (List.map entryOf kvs) ++ rbraceT ∷ []) ++ rest)
+                          ≡ just (v′ , rest)
+                      × v′ ≈ⱼ impure ((JSONCont.object , ks) , f)
+  objectCore ks f kvs eq pkvs rest zero ()
+  objectCore ks f kvs eq pkvs rest (suc g) (s≤s le) =
+    finish (objectLoop-print kvs pkvs rest g
+              (subst (_≤ g) (trans (length-++ E) (+-comm (length E) 1)) le))
     where
-    kvs = JSONCont.objectCToEntries (ks , f)
-    E   = elems (List.map entryOf kvs)
+    E = elems (List.map entryOf kvs)
 
-    core : ∀ rest fuel → length (lbraceT ∷ E ++ rbraceT ∷ []) ≤ fuel →
-           ∃ λ v′ → parseValue fuel ((lbraceT ∷ E ++ rbraceT ∷ []) ++ rest) ≡ just (v′ , rest)
-                  × v′ ≈ⱼ impure ((JSONCont.object , ks) , f)
-    core rest zero ()
-    core rest (suc g) (s≤s le) with objectLoop-print kvs (all-entries ks f ih) rest g
-                              (subst (_≤ g) (trans (length-++ E) (+-comm (length E) 1)) le)
-    ... | kvs′ , eqL , pw =
+    finish : (∃ λ kvs′ → parseObjectEntries g (E ++ rbraceT ∷ rest) ≡ just (kvs′ , rest)
+                       × Pointwise EntryRel kvs′ kvs) →
+             ∃ λ v′ → parseValue (suc g) ((lbraceT ∷ E ++ rbraceT ∷ []) ++ rest) ≡ just (v′ , rest)
+                    × v′ ≈ⱼ impure ((JSONCont.object , ks) , f)
+    finish (kvs′ , eqL , pw) =
       objectFromList′ kvs′ ,
       trans (cong (λ T → Maybe.map (map₁ objectFromList′) (parseObjectEntries g T))
                   (++-assoc E (rbraceT ∷ []) rest))
             (cong (Maybe.map (map₁ objectFromList′)) eqL) ,
-      objectFromList′-go ks f kvs′ pw
+      objectFromList′-go ks f kvs′ (subst (Pointwise EntryRel kvs′) (sym eq) pw)
+
+  objectCase : ∀ ks (f : Pos (length ks) → JSON) → (∀ i → Print-ok (f i)) →
+               Print-ok (impure ((JSONCont.object , ks) , f))
+  objectCase ks f ih =
+    print-ok-via _ _ (printTokens-object′ ks f)
+      (objectCore ks f _ refl (all-entries ks f ih))
 
 parseValue-print : ∀ v → Print-ok v
 parseValue-print (pure ())

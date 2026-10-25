@@ -18,7 +18,7 @@ module Data.XML.Equality where
 
 open import Level using (0ℓ)
 open import Data.Container.FreeMonad using (pure; impure)
-open import Data.Fin using (Fin)
+open import Data.Container.List using (Pos; castP)
 open import Data.Nat using (ℕ; suc)
 open import Data.Product using (_,_)
 open import Data.Vec using (Vec)
@@ -32,9 +32,9 @@ infix 4 _≈ₓ_
 
 data _≈ₓ_ : Rel XMLDoc 0ℓ where
   ≈element : ∀ {tag attrs n m} {ts : Vec Text (suc n)} {ts′ : Vec Text (suc m)}
-               {pt pt′ pa pa′ px px′} {f : Fin n → XMLDoc} {g : Fin m → XMLDoc}
+               {pt pt′ pa pa′ px px′} {f : Pos n → XMLDoc} {g : Pos m → XMLDoc}
              (e : n ≡ m) → subst (λ k → Vec Text (suc k)) e ts ≡ ts′ →
-             (∀ i → f i ≈ₓ g (subst Fin e i)) →
+             (∀ i → f i ≈ₓ g (castP e i)) →
              impure (shape tag attrs n ts pt pa px , f) ≈ₓ impure (shape tag attrs m ts′ pt′ pa′ px′ , g)
 
 ≈ₓ-refl : ∀ {x} → x ≈ₓ x

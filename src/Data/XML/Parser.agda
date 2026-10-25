@@ -22,9 +22,9 @@ open import Level using (0ℓ)
 open import Data.Bool using (Bool; true; false; _∧_; not; T)
 open import Data.Char using (Char; toℕ)
 open import Data.Empty using (⊥; ⊥-elim)
-open import Data.Fin using (Fin; zero; suc)
+open import Data.Container.List using (Pos; zeroP; sucP; castP; noPos; tabulate; tabulate-suc; pointwise-table; table)
 open import Data.List as List using (List; []; _∷_; _++_; length)
-open import Data.List.Properties using (++-assoc; ++-identityʳ; length-++)
+open import Data.List.Properties using (++-assoc; ++-identityʳ; length-++; length-map)
 open import Data.List.Relation.Unary.All using (All; []; _∷_)
 open import Data.List.Relation.Binary.Pointwise as PW using (Pointwise; []; _∷_)
 open import Data.Maybe as Maybe using (Maybe; just; nothing; fromMaybe)
@@ -132,7 +132,7 @@ private
   checked-T true  p k = refl
   checked-T false () k
 
-mkNode-valid : ∀ tag attrs n ts (f : Fin n → XMLDoc) pt pa px →
+mkNode-valid : ∀ tag attrs n ts (f : Pos n → XMLDoc) pt pa px →
   mkNode tag attrs (n , ts , f) ≡ just (node tag attrs ts f {pt} {pa} {px})
 mkNode-valid tag attrs n ts f pt pa px =
   trans (checked-T _ pt _) (trans (checked-T _ pa _) (checked-T _ px _))
@@ -141,10 +141,10 @@ mkNode-valid tag attrs n ts f pt pa px =
 -- children bisimilar (the arities are equal, through `e`).
 NodeRel : NodeData XMLDoc → NodeData XMLDoc → Set
 NodeRel (n , ts , f) (m , ts′ , g) =
-  Σ (n ≡ m) λ e → subst (λ k → Vec Text (suc k)) e ts ≡ ts′ × ∀ i → f i ≈ₓ g (subst Fin e i)
+  Σ (n ≡ m) λ e → subst (λ k → Vec Text (suc k)) e ts ≡ ts′ × ∀ i → f i ≈ₓ g (castP e i)
 
 -- A node built from data related to the data of `v` is bisimilar to `v`.
-build-node : ∀ tag attrs X n ts (f : Fin n → XMLDoc) pt pa px → NodeRel X (n , ts , f) →
+build-node : ∀ tag attrs X n ts (f : Pos n → XMLDoc) pt pa px → NodeRel X (n , ts , f) →
   ∃ λ v′ → mkNode tag attrs X ≡ just v′
          × v′ ≈ₓ impure (shape tag attrs n ts pt pa px , f)
 build-node tag attrs (n′ , ts′ , f′) n ts f pt pa px (refl , refl , h) =
@@ -156,21 +156,29 @@ build-node tag attrs (n′ , ts′ , f′) n ts f pt pa px (refl , refl , h) =
 ChildRel : Rel (XMLDoc × Text) 0ℓ
 ChildRel (v′ , t′) (v , t) = v′ ≈ₓ v × t′ ≡ t
 
-consNode-rel : ∀ t v′ x m (ts : Vec Text (suc m)) (f : Fin (suc m) → XMLDoc) →
-               v′ ≈ₓ f zero → NodeRel x (m , ts , f ∘ suc) →
-               NodeRel (consNode t v′ x) (suc m , t ∷ ts , f)
-consNode-rel t v′ (n′ , ts′ , f′) m ts f hz (refl , refl , h) =
-  refl , refl , λ { zero → hz; (suc i) → h i }
+-- Parsed content related to `mixedS n ts f`: the same number of children,
+-- the same text slots, and pointwise bisimilar children.
+content-rel : ∀ n (ts : Vec Text (suc n)) (f : Pos n → XMLDoc)
+              (t′ : Text) (cs′ : List (XMLDoc × Text)) →
+              t′ ≡ proj₁ (mixedS n ts f) → Pointwise ChildRel cs′ (proj₂ (mixedS n ts f)) →
+              Σ (length cs′ ≡ n) λ e →
+                subst (λ k → Vec Text (suc k)) e (textSlots t′ cs′) ≡ ts
+                × Pointwise _≈ₓ_ (List.map proj₁ cs′) (tabulate n f)
+content-rel zero    (t ∷ [])      f t′ []   refl []                    = refl , refl , []
+content-rel (suc n) (t ∷ ts)      f t′ ((v′ , t₁′) ∷ cs″) refl ((≈v , eq) ∷ pw)
+  with content-rel n ts (f ∘ sucP) t₁′ cs″ eq pw
+... | refl , refl , pwc =
+  refl , refl , subst (Pointwise _≈ₓ_ _) (sym (tabulate-suc _ f)) (≈v ∷ pwc)
 
--- Parsed content related to `mixed n ts f` yields related node data.
-fromContent-rel : ∀ n (ts : Vec Text (suc n)) (f : Fin n → XMLDoc)
+-- Parsed content related to `mixedS n ts f` yields related node data.
+fromContent-rel : ∀ n (ts : Vec Text (suc n)) (f : Pos n → XMLDoc)
                   (t′ : Text) (cs′ : List (XMLDoc × Text)) →
-                  t′ ≡ proj₁ (mixed n ts f) → Pointwise ChildRel cs′ (proj₂ (mixed n ts f)) →
-                  NodeRel (fromContent′ t′ cs′) (n , ts , f)
-fromContent-rel zero    (t ∷ [])  f t′ []   refl []                    = refl , refl , λ ()
-fromContent-rel (suc n) (t ∷ ts) f t′ ((v′ , t₁′) ∷ cs″) refl ((≈v , eq) ∷ pw) =
-  consNode-rel t v′ (fromContent′ t₁′ cs″) n ts f ≈v
-    (fromContent-rel n ts (f ∘ suc) t₁′ cs″ eq pw)
+                  t′ ≡ proj₁ (mixedS n ts f) → Pointwise ChildRel cs′ (proj₂ (mixedS n ts f)) →
+                  NodeRel (fromContent (t′ , cs′)) (n , ts , f)
+fromContent-rel n ts f t′ cs′ h pw = proj₁ cr , proj₁ (proj₂ cr) , λ i → proj₂ pt (castP (sym (length-map proj₁ cs′)) i)
+  where
+  cr = content-rel n ts f t′ cs′ h pw
+  pt = pointwise-table (List.map proj₁ cs′) n f (proj₂ (proj₂ cr))
 
 ------------------------------------------------------------------------
 -- Facts about token streams
@@ -250,10 +258,10 @@ private
     ≤-trans (s≤s (≤-trans CM (m≤n+m (length M) a)))
             (subst (λ x → x + length M ≤ f) lenP lt)
 
-  all-mixed : ∀ {P : XMLDoc → Set} n (ts : Vec Text (suc n)) (f : Fin n → XMLDoc) →
-              (∀ i → P (f i)) → All (P ∘ proj₁) (proj₂ (mixed n ts f))
-  all-mixed zero    (t ∷ [])  f p = []
-  all-mixed (suc n) (t ∷ ts) f p = p zero ∷ all-mixed n ts (f ∘ suc) (p ∘ suc)
+  all-mixedS : ∀ {P : XMLDoc → Set} n (ts : Vec Text (suc n)) (f : Pos n → XMLDoc) →
+              (∀ i → P (f i)) → All (P ∘ proj₁) (proj₂ (mixedS n ts f))
+  all-mixedS zero    (t ∷ [])  f p = []
+  all-mixedS (suc n) (t ∷ ts) f p = p zeroP ∷ all-mixedS n ts (f ∘ sucP) (p ∘ sucP)
 
   -- One child, the text after it, and the rest are parsed back.
   parseChildren-cons : ∀ f c t C tag rest c′ cs″ →
@@ -313,15 +321,15 @@ private
       (≈c , refl) ∷ pw
 
   -- A node with a start tag, content, and end tag.
-  openCase : ∀ tag attrs n ts pt pa px (f : Fin n → XMLDoc) → (∀ i → Print-ok (f i)) →
+  openCase : ∀ tag attrs n ts pt pa px (f : Pos n → XMLDoc) → (∀ i → Print-ok (f i)) →
     printTokens (impure (shape tag attrs n ts pt pa px , f))
-      ≡ openT tag attrs ∷ contentTokens (mapContent printTokens (mixed n ts f)) ++ closeT tag ∷ [] →
+      ≡ openT tag attrs ∷ contentTokens (mapContent printTokens (mixedS n ts f)) ++ closeT tag ∷ [] →
     Print-ok (impure (shape tag attrs n ts pt pa px , f))
   openCase tag attrs n ts pt pa px f ih eq rest fuel le
     with core rest fuel (subst (λ X → length X ≤ fuel) eq le)
     where
     cd : Content XMLDoc
-    cd = mixed n ts f
+    cd = mixedS n ts f
 
     t₀ : Text
     t₀ = proj₁ cd
@@ -353,18 +361,25 @@ private
       body : ∃ λ v′ → parseElement (suc f₀) ((openT tag attrs ∷ X ++ closeT tag ∷ []) ++ rest)
                         ≡ just (v′ , rest)
                     × v′ ≈ₓ impure (shape tag attrs n ts pt pa px , f)
-      body with parseChildren-print cs (all-mixed n ts f ih) tag rest f₀ (≤-trans (s≤s CX) le₁)
-      ... | cs′ , eqc , pw
-        with build-node tag attrs (fromContent′ t₀ cs′) n ts f pt pa px
-                        (fromContent-rel n ts f t₀ cs′ refl pw)
-      ... | v′ , eqm , ≈v =
-        v′ ,
-        trans (cong (λ L → parseContent f₀ tag attrs (takeText L)) eqL)
-        (trans (cong (parseContent f₀ tag attrs) (takeText-text t₀ (C ++ closeT tag ∷ rest) (NT-children cs tag rest)))
-        (trans (cong (parseClose tag attrs t₀) eqc)
-        (trans (cong (parseClose′ tag attrs (t₀ , cs′) rest) (eqName-refl tag))
-               (cong (Maybe.map (λ v → v , rest)) eqm)))) ,
-        ≈v
+      body = done′ (parseChildren-print cs (all-mixedS n ts f ih) tag rest f₀ (≤-trans (s≤s CX) le₁))
+        where
+        done′ : (∃ λ cs′ → parseChildren f₀ (C ++ closeT tag ∷ rest) ≡ just (cs′ , closeT tag ∷ rest)
+                          × Pointwise ChildRel cs′ cs) →
+                 ∃ λ v′ → parseElement (suc f₀) ((openT tag attrs ∷ X ++ closeT tag ∷ []) ++ rest)
+                            ≡ just (v′ , rest)
+                        × v′ ≈ₓ impure (shape tag attrs n ts pt pa px , f)
+        done′ (cs′ , eqc , pw) = v′ , chain , proj₂ (proj₂ bn)
+          where
+          bn = build-node tag attrs (fromContent (t₀ , cs′)) n ts f pt pa px
+                          (fromContent-rel n ts f t₀ cs′ refl pw)
+          v′ = proj₁ bn
+          eqm = proj₁ (proj₂ bn)
+          chain =
+            trans (cong (λ L → parseContent f₀ tag attrs (takeText L)) eqL)
+            (trans (cong (parseContent f₀ tag attrs) (takeText-text t₀ (C ++ closeT tag ∷ rest) (NT-children cs tag rest)))
+            (trans (cong (parseClose tag attrs t₀) eqc)
+            (trans (cong (parseClose′ tag attrs (t₀ , cs′) rest) (eqName-refl tag))
+                   (cong (Maybe.map (λ v → v , rest)) eqm))))
   ... | v′ , p , ≈v =
     v′ , subst (λ X → parseElement fuel (X ++ rest) ≡ just (v′ , rest)) (sym eq) p , ≈v
 
@@ -372,17 +387,17 @@ parseElement-print : ∀ v → Print-ok v
 parseElement-print (pure ())
 parseElement-print (impure (shape tag attrs zero ([] ∷ []) pt pa px , f)) rest zero ()
 parseElement-print (impure (shape tag attrs zero ([] ∷ []) pt pa px , f)) rest (suc g) _ =
-  node tag attrs ([] ∷ []) (λ ()) {pt} {pa} {px} ,
-  cong (Maybe.map (λ v → v , rest)) (mkNode-valid tag attrs zero ([] ∷ []) (λ ()) pt pa px) ,
-  ≈element refl refl (λ ())
+  node tag attrs ([] ∷ []) (λ p → noPos p) {pt} {pa} {px} ,
+  cong (Maybe.map (λ v → v , rest)) (mkNode-valid tag attrs zero ([] ∷ []) (λ p → noPos p) pt pa px) ,
+  ≈element refl refl (λ i → noPos i)
 parseElement-print (impure (shape tag attrs zero ((x ∷ xs) ∷ []) pt pa px , f)) =
-  openCase tag attrs zero ((x ∷ xs) ∷ []) pt pa px f (λ ())
+  openCase tag attrs zero ((x ∷ xs) ∷ []) pt pa px f (λ i → noPos i)
     (trans (printTokens-node tag attrs zero ((x ∷ xs) ∷ []) pt pa px f)
-           (cong (elementTokens tag attrs) (mixed-map zero ((x ∷ xs) ∷ []) f printTokens)))
+           (cong (elementTokens tag attrs) (mixedS-map zero ((x ∷ xs) ∷ []) f printTokens)))
 parseElement-print (impure (shape tag attrs (suc n) (t ∷ ts) pt pa px , f)) =
   openCase tag attrs (suc n) (t ∷ ts) pt pa px f (λ i → parseElement-print (f i))
     (trans (printTokens-node tag attrs (suc n) (t ∷ ts) pt pa px f)
-           (cong (elementTokens tag attrs) (mixed-map (suc n) (t ∷ ts) f printTokens)))
+           (cong (elementTokens tag attrs) (mixedS-map (suc n) (t ∷ ts) f printTokens)))
 
 ------------------------------------------------------------------------
 -- `parser`
@@ -399,7 +414,7 @@ parseTokens-printTokens v with parseElement-print v [] (suc (length (printTokens
 
 -- A document to return where parsing fails.
 defaultDoc : XMLDoc
-defaultDoc = parent ('a' ∷ []) [] (zero , λ ())
+defaultDoc = parent ('a' ∷ []) [] (zero , λ p → noPos p)
 
 -- `parser`.  `to` pairs the tokens with the proof that
 -- they are valid; `from` parses, with `defaultDoc` where parsing fails.
