@@ -1,0 +1,56 @@
+name: Deploy Agda HTML to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # setup-agda ships a prebuilt Agda 2.7.0.1 binary for 22.04 only (not 24.04 / ubuntu-latest).
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: wenkokke/setup-agda@v2
+        with:
+          agda-version: 2.7.0.1
+          agda-stdlib-version: none
+
+      # setup-agda only knows stdlib <= 2.1.1, so fetch the pinned version ourselves.
+      - name: Install standard library
+        run: |
+          git clone --depth 1 --branch v2.3 https://github.com/agda/agda-stdlib.git ~/agda-stdlib
+          # Upstream names it standard-library-2.x; our .agda-lib says plain standard-library.
+          sed -i 's/^name: standard-library.*/name: standard-library/' ~/agda-stdlib/standard-library.agda-lib
+          mkdir -p ~/.agda
+          echo standard-library > ~/.agda/defaults
+          echo ~/agda-stdlib/standard-library.agda-lib > ~/.agda/libraries
+
+      - name: Typecheck and render html/
+        run: make html
+
+      - run: cp html/Everything.html html/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: html
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
